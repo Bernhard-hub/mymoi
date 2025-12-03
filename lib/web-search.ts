@@ -79,8 +79,8 @@ export function getMapLink(location: string): string {
 // Wetter API (Open-Meteo - kostenlos)
 export async function getWeather(city: string): Promise<{temp: number, description: string, humidity: number, wind: number} | null> {
   try {
-    // Erst Geocoding
-    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1`
+    // Erst Geocoding - mit language=de für deutsche Städte
+    const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=de`
     const geoRes = await fetch(geoUrl)
     const geoData = await geoRes.json()
 
