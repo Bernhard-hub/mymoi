@@ -327,7 +327,7 @@ _Schreib mir wenn Payment live ist!_`)
       const fullMessage = prefix + asset.content
       if (fullMessage.length > 4000) {
         // Split into multiple messages
-        const chunks = asset.content.match(/.{1,3900}/gs) || [asset.content]
+        const chunks = asset.content.match(/.{1,3900}/g) || [asset.content]
         await sendMessage(chatId, prefix + chunks[0])
         for (let i = 1; i < chunks.length; i++) {
           await sendMessage(chatId, chunks[i])
