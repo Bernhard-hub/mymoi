@@ -48,12 +48,13 @@ export async function useCredit(telegramId: number): Promise<boolean> {
 }
 
 // Asset speichern
-export async function saveAsset(telegramId: number, type: string, content: string, fileUrl?: string) {
+export async function saveAsset(telegramId: number, type: string, title: string, content: string, fileUrl?: string) {
   const { data } = await supabase
     .from('assets')
     .insert({
       telegram_id: telegramId,
       type,
+      title,
       content,
       file_url: fileUrl,
       created_at: new Date().toISOString()
