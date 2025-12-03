@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrCreateUser, useCredit, uploadFile, saveAsset } from '@/lib/supabase'
+import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase } from '@/lib/supabase'
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
+import { searchYouTube, searchWeb, getWeather, getNews, getMapLink } from '@/lib/web-search'
+import { sendInvoice, answerPreCheckoutQuery, sendPaymentMenu, processSuccessfulPayment, CREDIT_PACKAGES } from '@/lib/payment'
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
@@ -13,6 +15,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
 async function sendMessage(chatId: number, text: string, options?: {
   parse_mode?: 'Markdown' | 'HTML'
   reply_markup?: object
+  disable_web_page_preview?: boolean
 }) {
   const response = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
@@ -21,7 +24,8 @@ async function sendMessage(chatId: number, text: string, options?: {
       chat_id: chatId,
       text,
       parse_mode: options?.parse_mode || 'Markdown',
-      reply_markup: options?.reply_markup
+      reply_markup: options?.reply_markup,
+      disable_web_page_preview: options?.disable_web_page_preview
     })
   })
   return response.json()
@@ -41,32 +45,6 @@ async function sendDocument(chatId: number, fileUrl: string, fileName: string, c
   })
 }
 
-async function sendPhoto(chatId: number, photoUrl: string, caption?: string) {
-  await fetch(`${TELEGRAM_API}/sendPhoto`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      photo: photoUrl,
-      caption,
-      parse_mode: 'Markdown'
-    })
-  })
-}
-
-async function sendVoice(chatId: number, voiceUrl: string, caption?: string) {
-  await fetch(`${TELEGRAM_API}/sendVoice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      voice: voiceUrl,
-      caption,
-      parse_mode: 'Markdown'
-    })
-  })
-}
-
 async function sendChatAction(chatId: number, action: 'typing' | 'upload_document' | 'record_voice') {
   await fetch(`${TELEGRAM_API}/sendChatAction`, {
     method: 'POST',
@@ -75,7 +53,7 @@ async function sendChatAction(chatId: number, action: 'typing' | 'upload_documen
   })
 }
 
-// Voice in Text umwandeln (Groq Whisper - kostenlos)
+// Voice in Text umwandeln (Groq Whisper)
 async function transcribeVoice(fileId: string): Promise<string> {
   const fileRes = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`)
   const fileData = await fileRes.json()
@@ -100,7 +78,59 @@ async function transcribeVoice(fileId: string): Promise<string> {
 }
 
 // ============================================
-// EMOJI MAPPING FÜR ASSET TYPES
+// INTENT DETECTION - Was will der User?
+// ============================================
+function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'asset', query: string } {
+  const lower = text.toLowerCase()
+
+  // YouTube
+  if (lower.includes('youtube') || lower.includes('video') || lower.includes('tutorial') ||
+      lower.includes('zeig mir') || lower.includes('film') || lower.includes('musik video')) {
+    const query = text.replace(/youtube|video|zeig mir|tutorial|film|musik/gi, '').trim()
+    return { type: 'youtube', query: query || text }
+  }
+
+  // Wetter
+  if (lower.includes('wetter') || lower.includes('temperatur') || lower.includes('regnet') ||
+      lower.includes('weather') || lower.includes('sonnig') || lower.includes('kalt') ||
+      lower.includes('warm') || lower.includes('grad')) {
+    const cityMatch = text.match(/(?:in|für|bei)\s+(\w+)/i) || text.match(/wetter\s+(\w+)/i)
+    return { type: 'weather', query: cityMatch?.[1] || 'Berlin' }
+  }
+
+  // News
+  if (lower.includes('news') || lower.includes('nachrichten') || lower.includes('aktuell') ||
+      lower.includes('neuigkeiten') || lower.includes('was gibt es neues')) {
+    const query = text.replace(/news|nachrichten|aktuell|neuigkeiten|was gibt es neues/gi, '').trim()
+    return { type: 'news', query: query || 'Deutschland' }
+  }
+
+  // Maps/Navigation
+  if (lower.includes('karte') || lower.includes('map') || lower.includes('navigation') ||
+      lower.includes('route') || lower.includes('weg zu') || lower.includes('wie komme ich')) {
+    const query = text.replace(/karte|map|navigation|route|weg zu|wie komme ich/gi, '').trim()
+    return { type: 'maps', query: query || 'Berlin' }
+  }
+
+  // Web Search
+  if (lower.includes('such') || lower.includes('google') || lower.includes('find') ||
+      lower.includes('link') || lower.includes('website') || lower.includes('seite')) {
+    const query = text.replace(/such|google|find|link|website|seite/gi, '').trim()
+    return { type: 'web', query: query || text }
+  }
+
+  // Kaufen
+  if (lower.includes('kaufen') || lower.includes('credits') || lower.includes('bezahlen') ||
+      lower.includes('payment') || lower.includes('premium') || lower.includes('upgrade')) {
+    return { type: 'buy', query: '' }
+  }
+
+  // Default: AI Asset generieren
+  return { type: 'asset', query: text }
+}
+
+// ============================================
+// EMOJI MAPPING
 // ============================================
 const ASSET_EMOJIS: Record<string, string> = {
   text: '📝', listing: '🏷️', presentation: '📊', email: '📧',
@@ -114,44 +144,8 @@ const ASSET_EMOJIS: Record<string, string> = {
   dream_journal: '🌙', poetry: '🎭', story: '📖', affirmation: '🌟',
   meditation: '🧘', joke: '😄', quiz: '❓', flashcards: '🃏',
   debate: '⚖️', swot: '📊', persona: '👤', pitch: '🚀', slogan: '✨',
-  life_coach: '🧠', horoscope: '🔮', tarot: '🃏', baby_name: '👶',
-  pet_name: '🐾', band_name: '🎸', color_palette: '🎨', outfit: '👗',
-  date_idea: '💕', party_theme: '🎉', cocktail: '🍸', playlist: '🎧',
-  book_recommend: '📚', movie_recommend: '🎬', game_idea: '🎲',
-  icebreaker: '🧊', compliment: '💝', apology: '🙏', breakup: '💔',
-  wedding_speech: '💒', eulogy: '🕯️', roast: '🔥', rap_verse: '🎤',
-  pickup_line: '😏', excuse: '🤷', conspiracy: '👽', fortune: '🥠',
-  haiku: '🌸', limerick: '🍀', acrostic: '🔤', anagram: '🔀',
-  trivia: '💡', this_day: '📆', would_rather: '🤔', mad_libs: '📝',
-  dnd_character: '🐉', superhero: '🦸', villain: '🦹', world_build: '🌍',
-  plot_twist: '🔄', startup_name: '🚀', product_desc: '📦',
-  review_response: '💬', faq: '❓', terms: '📋', privacy: '🔒',
-  job_post: '💼', cover_letter: '✉️', reference: '⭐', resignation: '👋',
-  complaint: '😤', thank_you: '🙏', love_letter: '💌', bucket_list: '🎯',
-  new_year: '🎆', gratitude: '🙏', habit_tracker: '📈', morning_routine: '☀️',
-  productivity: '⚡', declutter: '🧹', capsule_wardrobe: '👕', skincare: '✨',
-  astro_compat: '💫', decision: '⚖️', argument_win: '🏆', negotiation: '🤝',
-  salary_ask: '💵', difficult_conv: '💭', confrontation: '⚔️', boundary: '🚧',
-  self_care: '💆', energy_boost: '⚡', sleep_routine: '😴', mindset_shift: '🧠',
-  fear_conquer: '💪', habit_break: '🔨', procrastinate: '⏰', focus_session: '🎯',
-  brain_dump: '💭', priority_matrix: '📊', goal_smart: '🎯', okr: '📈',
-  kpi: '📊', milestone: '🏁', retrospective: '🔄', standup: '🧍',
-  meeting_agenda: '📋', minutes: '📝', action_items: '✅', delegate: '👉',
-  feedback_give: '💬', feedback_ask: '❓', '360_review': '🔄',
-  onboarding: '🚀', offboarding: '👋', team_building: '👥', conflict_res: '🕊️',
-  crisis_comm: '🚨', press_release: '📰', media_kit: '📁', bio: '👤',
-  intro: '👋', networking: '🤝', cold_email: '📧', follow_up: '📩',
-  reminder_email: '⏰', upsell: '📈', objection: '🛡️', closing: '🎯',
-  refund_handle: '💳', churn_prevent: '🚫', win_back: '🏆', testimonial: '⭐',
-  case_study: '📊', white_paper: '📄', ebook: '📱', course_outline: '📚',
-  webinar_script: '🎥', podcast_notes: '🎙️', interview_qs: '❓', survey: '📋',
-  nps: '📊', ab_test: '🔬', user_journey: '🗺️', empathy_map: '💭',
-  value_prop: '💎', lean_canvas: '📋', bmcanvas: '📊', competitor: '🔍',
-  market_size: '📈', pricing: '💵', launch_plan: '🚀', growth_hack: '📈',
-  viral_loop: '🔄', referral: '👥', loyalty: '💎', gamification: '🎮',
-  community: '👥', influencer: '⭐', collab: '🤝', sponsorship: '🏆',
-  grant: '💰', crowdfund: '🎯', investor_deck: '📊', term_sheet: '📄',
-  exit_strategy: '🚪'
+  life_coach: '🧠', horoscope: '🔮', tarot: '🃏', playlist: '🎧',
+  book_recommend: '📚', movie_recommend: '🎬', default: '✨'
 }
 
 // ============================================
@@ -159,28 +153,26 @@ const ASSET_EMOJIS: Record<string, string> = {
 // ============================================
 const WELCOME_MESSAGE = `Hey! 👋
 
-Ich bin *MOI* - dein ultimativer AI-Assistent.
+Ich bin *MOI* - dein ultimativer AI-Assistent mit ECHTEN Links!
 
-🚀 *Was ich kann:*
+🎬 *YouTube Videos* - "Zeig mir ein Video über..."
+🌦️ *Wetter* - "Wie ist das Wetter in Berlin?"
+📰 *News* - "Nachrichten über..."
+🗺️ *Maps* - "Route nach München"
+🔍 *Web Suche* - "Such mir..."
 
-📊 Präsentationen & Dokumente
-📧 E-Mails & Bewerbungen
-🏷️ eBay Listings
-💼 Business Plans & Pitch Decks
-🎨 Bilder & Design Prompts
-🎬 Video Scripts & Stories
-📱 Social Media Posts
-💻 Code & Websites
-📅 Kalender & Planung
-🔮 Horoskope & Tarot
-💪 Fitness & Ernährung
-🎵 Musik Prompts
-📚 Lernen & Quiz
-... und 200+ weitere Assets!
+📊 *200+ AI Assets:*
+• Präsentationen & Dokumente
+• E-Mails & Bewerbungen
+• Business Plans & Pitch Decks
+• Fitness & Ernährungspläne
+• Horoskope & Tarot
+... und vieles mehr!
 
-*Schick mir einfach eine Nachricht oder Sprachnachricht und sag was du brauchst!*
+💳 /buy - Credits kaufen
+💰 /credits - Deine Credits
 
-_3 kostenlose Assets zum Start_ 🎁`
+*Schick mir einfach eine Nachricht!* 🚀`
 
 // ============================================
 // MAIN WEBHOOK HANDLER
@@ -190,14 +182,69 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const message = body.message
     const callbackQuery = body.callback_query
+    const preCheckoutQuery = body.pre_checkout_query
+    const successfulPayment = message?.successful_payment
 
-    // Handle callback queries (button presses)
+    // ============================================
+    // PAYMENT: Pre-Checkout Query
+    // ============================================
+    if (preCheckoutQuery) {
+      // WICHTIG: Muss innerhalb 10 Sekunden beantwortet werden!
+      await answerPreCheckoutQuery(preCheckoutQuery.id, true)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // PAYMENT: Erfolgreiche Zahlung
+    // ============================================
+    if (successfulPayment) {
+      const chatId = message.chat.id
+      const userId = message.from.id
+      const credits = await processSuccessfulPayment(userId, successfulPayment.invoice_payload)
+
+      // Credits gutschreiben
+      await supabase
+        .from('users')
+        .update({ credits: supabase.rpc('increment_credits', { amount: credits }) })
+        .eq('telegram_id', userId)
+
+      // Alternativ direkt:
+      const { data: user } = await supabase
+        .from('users')
+        .select('credits')
+        .eq('telegram_id', userId)
+        .single()
+
+      if (user) {
+        await supabase
+          .from('users')
+          .update({ credits: user.credits + credits })
+          .eq('telegram_id', userId)
+      }
+
+      await sendMessage(chatId, `🎉 *Zahlung erfolgreich!*
+
++${credits} Credits wurden gutgeschrieben!
+
+Du hast jetzt *${(user?.credits || 0) + credits} Credits*.
+
+Viel Spaß mit MOI! 🚀`)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // CALLBACK QUERIES (Button Clicks)
+    // ============================================
     if (callbackQuery) {
       const chatId = callbackQuery.message.chat.id
       const data = callbackQuery.data
 
-      // Handle menu buttons here
-      await sendMessage(chatId, `Du hast ${data} ausgewählt. Feature kommt bald!`)
+      // Payment Buttons
+      if (data.startsWith('buy_')) {
+        const packageId = data.replace('buy_', '')
+        await sendInvoice(chatId, packageId)
+      }
+
       return NextResponse.json({ ok: true })
     }
 
@@ -221,54 +268,139 @@ export async function POST(request: NextRequest) {
         await sendMessage(chatId, 'Konnte die Sprachnachricht nicht verstehen. Versuch es nochmal!')
         return NextResponse.json({ ok: true })
       }
+      await sendMessage(chatId, `📝 _"${userText}"_`)
     } else if (message.text) {
-      // /start Befehl
+      // COMMANDS
       if (message.text === '/start') {
         await sendMessage(chatId, WELCOME_MESSAGE)
         return NextResponse.json({ ok: true })
       }
 
-      // /help Befehl
       if (message.text === '/help') {
-        await sendMessage(chatId, `*Hilfe* 🆘
-
-Schick mir einfach was du brauchst:
-
-• "Erstelle eine Präsentation über..."
-• "Schreib mir eine E-Mail an..."
-• "Erstelle ein eBay Listing für..."
-• "Mach mir einen Trainingsplan"
-• "Was ist mein Horoskop für heute?"
-• "Gib mir Geschenkideen für..."
-
-Ich erkenne automatisch was du willst! 🎯`)
+        await sendMessage(chatId, WELCOME_MESSAGE)
         return NextResponse.json({ ok: true })
       }
 
-      // /credits Befehl
       if (message.text === '/credits') {
         await sendMessage(chatId, `💰 *Deine Credits:* ${user.credits}
 
-💡 Mit jedem Credit kannst du ein Asset erstellen.
+/buy - Mehr Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
 
-🎁 *Mehr Credits?*
-Coming soon: 10 Credits für 2€`)
+      if (message.text === '/buy') {
+        await sendPaymentMenu(chatId)
         return NextResponse.json({ ok: true })
       }
 
       userText = message.text
-    } else if (message.photo) {
-      await sendMessage(chatId, '📸 Bilder-Analyse kommt bald!')
-      return NextResponse.json({ ok: true })
-    } else if (message.document) {
-      await sendMessage(chatId, '📄 Dokumenten-Analyse kommt bald!')
+    } else {
       return NextResponse.json({ ok: true })
     }
 
-    if (!userText) {
-      await sendMessage(chatId, 'Schick mir eine Nachricht oder Sprachnachricht!')
+    // Intent erkennen
+    const intent = detectIntent(userText)
+    await sendChatAction(chatId, 'typing')
+
+    // ============================================
+    // YOUTUBE VIDEOS
+    // ============================================
+    if (intent.type === 'youtube') {
+      const videos = await searchYouTube(intent.query)
+      if (videos.length > 0) {
+        let response = `🎬 *YouTube Videos für "${intent.query}":*\n\n`
+        videos.forEach((v, i) => {
+          response += `${i + 1}. [${v.title}](${v.url})\n_${v.channel}_\n\n`
+        })
+        await sendMessage(chatId, response, { disable_web_page_preview: false })
+      } else {
+        await sendMessage(chatId, `Keine Videos gefunden. Hier ist der YouTube Link:\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(intent.query)}`)
+      }
       return NextResponse.json({ ok: true })
     }
+
+    // ============================================
+    // WETTER
+    // ============================================
+    if (intent.type === 'weather') {
+      const weather = await getWeather(intent.query)
+      if (weather) {
+        const emojis: Record<string, string> = {
+          'Klar': '☀️', 'Überwiegend klar': '🌤️', 'Teilweise bewölkt': '⛅',
+          'Bewölkt': '☁️', 'Nebel': '🌫️', 'Regen': '🌧️', 'Schnee': '🌨️',
+          'Gewitter': '⛈️', 'Leichter Regen': '🌦️'
+        }
+        const emoji = emojis[weather.description] || '🌡️'
+
+        await sendMessage(chatId, `${emoji} *Wetter in ${intent.query}:*
+
+🌡️ *${weather.temp}°C* - ${weather.description}
+💧 Luftfeuchtigkeit: ${weather.humidity}%
+💨 Wind: ${weather.wind} km/h
+
+_Daten von Open-Meteo_`)
+      } else {
+        await sendMessage(chatId, `Konnte das Wetter für "${intent.query}" nicht abrufen.`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // NEWS
+    // ============================================
+    if (intent.type === 'news') {
+      const news = await getNews(intent.query)
+      if (news.length > 0) {
+        let response = `📰 *News zu "${intent.query}":*\n\n`
+        news.forEach((n, i) => {
+          response += `${i + 1}. [${n.title}](${n.url})\n_${n.source}_\n\n`
+        })
+        await sendMessage(chatId, response, { disable_web_page_preview: true })
+      } else {
+        await sendMessage(chatId, `Keine News gefunden zu "${intent.query}".`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // MAPS
+    // ============================================
+    if (intent.type === 'maps') {
+      const mapUrl = getMapLink(intent.query)
+      await sendMessage(chatId, `🗺️ *Karte für "${intent.query}":*
+
+[📍 Auf Google Maps öffnen](${mapUrl})`)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // WEB SEARCH
+    // ============================================
+    if (intent.type === 'web') {
+      const results = await searchWeb(intent.query)
+      if (results.length > 0) {
+        let response = `🔍 *Suchergebnisse für "${intent.query}":*\n\n`
+        results.forEach((r, i) => {
+          response += `${i + 1}. [${r.title}](${r.url})\n_${r.snippet.substring(0, 100)}..._\n\n`
+        })
+        await sendMessage(chatId, response, { disable_web_page_preview: true })
+      } else {
+        await sendMessage(chatId, `[🔍 Google Suche](https://www.google.com/search?q=${encodeURIComponent(intent.query)})`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // PAYMENT
+    // ============================================
+    if (intent.type === 'buy') {
+      await sendPaymentMenu(chatId)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // AI ASSET GENERIEREN
+    // ============================================
 
     // Credits prüfen
     const hasCredits = await useCredit(userId)
@@ -277,19 +409,16 @@ Coming soon: 10 Credits für 2€`)
 
 Deine kostenlosen Assets sind weg.
 
-💳 *Mehr Credits?*
-Coming soon: 10 Credits für 2€
+💳 /buy - Credits kaufen
 
-_Schreib mir wenn Payment live ist!_`)
+💎 10 Credits für nur 1,99€!`)
       return NextResponse.json({ ok: true })
     }
 
-    // Asset generieren
-    await sendChatAction(chatId, 'typing')
-    await sendMessage(chatId, '⚡ *Erstelle...*')
+    await sendMessage(chatId, '⚡ *Erstelle dein Asset...*')
 
     const asset = await generateAsset(userText)
-    const emoji = ASSET_EMOJIS[asset.type] || '📝'
+    const emoji = ASSET_EMOJIS[asset.type] || ASSET_EMOJIS.default
 
     // Asset in DB speichern
     await saveAsset(userId, asset.type, asset.title || 'Untitled', asset.content)
@@ -303,30 +432,18 @@ _Schreib mir wenn Payment live ist!_`)
         const fileName = `${asset.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'presentation'}_${Date.now()}.pptx`
         const fileUrl = await uploadFile(fileName, pptxBuffer, 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
         await sendDocument(chatId, fileUrl, fileName, `${emoji} *${asset.title}*\n\n_Fertig zum Präsentieren!_`)
-      } catch (e) {
+      } catch {
         await sendMessage(chatId, `${emoji} *${asset.title || 'Präsentation'}*\n\n${asset.content}`)
       }
     } else if (asset.type === 'code') {
-      // Code mit Syntax Highlighting
       const lang = asset.metadata?.codeLanguage || ''
-      await sendMessage(chatId, `${emoji} *${asset.title || 'Code'}*\n\n\`\`\`${lang}\n${asset.content}\n\`\`\``, { parse_mode: 'Markdown' })
-    } else if (asset.type === 'image_prompt') {
-      // Image Prompt mit Hinweis
-      await sendMessage(chatId, `${emoji} *${asset.title || 'Bild-Prompt'}*\n\n${asset.content}\n\n_Kopiere diesen Prompt in DALL-E, Midjourney oder Stable Diffusion!_`)
-    } else if (asset.type === 'music_prompt') {
-      await sendMessage(chatId, `${emoji} *${asset.title || 'Musik-Prompt'}*\n\n${asset.content}\n\n_Kopiere diesen Prompt in Suno oder Udio!_`)
-    } else if (asset.type === 'qr_code') {
-      await sendMessage(chatId, `${emoji} *QR Code*\n\n${asset.content}\n\n_QR Code Generierung kommt bald!_`)
-    } else if (asset.type === 'calendar' || asset.type === 'reminder') {
-      await sendMessage(chatId, `${emoji} *${asset.title || 'Kalender'}*\n\n${asset.content}\n\n_Kalender-Export kommt bald!_`)
+      await sendMessage(chatId, `${emoji} *${asset.title || 'Code'}*\n\n\`\`\`${lang}\n${asset.content}\n\`\`\``)
     } else {
       // Standard: Text mit Emoji
       const prefix = asset.title ? `${emoji} *${asset.title}*\n\n` : `${emoji} `
-
-      // Telegram max message length is 4096
       const fullMessage = prefix + asset.content
+
       if (fullMessage.length > 4000) {
-        // Split into multiple messages
         const chunks = asset.content.match(/.{1,3900}/g) || [asset.content]
         await sendMessage(chatId, prefix + chunks[0])
         for (let i = 1; i < chunks.length; i++) {
@@ -340,7 +457,7 @@ _Schreib mir wenn Payment live ist!_`)
     // Credits Info
     const remainingCredits = user.credits - 1
     if (remainingCredits <= 3 && remainingCredits > 0) {
-      await sendMessage(chatId, `💡 _Noch ${remainingCredits} Credits übrig_`)
+      await sendMessage(chatId, `💡 _Noch ${remainingCredits} Credits übrig_\n/buy - Mehr kaufen`)
     }
 
     return NextResponse.json({ ok: true })
