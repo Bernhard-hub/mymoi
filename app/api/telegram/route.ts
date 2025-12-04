@@ -6,6 +6,8 @@ import { createPDF } from '@/lib/pdf'
 import { createICS, parseCalendarFromAI } from '@/lib/ics'
 import { searchYouTube, searchWeb, getWeather, getNews, getMapLink } from '@/lib/web-search'
 import { sendInvoice, answerPreCheckoutQuery, sendPaymentMenu, processSuccessfulPayment, CREDIT_PACKAGES } from '@/lib/payment'
+import { parseChainActions, executeChain, mightBeChain, ChainResult } from '@/lib/chain-actions'
+import { actionHandlers } from '@/lib/action-handlers'
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
@@ -206,32 +208,29 @@ const ASSET_EMOJIS: Record<string, string> = {
 // ============================================
 const WELCOME_MESSAGE = `Hey! 👋
 
-Ich bin *MOI* - dein ultimativer AI-Assistent mit ECHTEN Links!
+Ich bin *MOI* - der AI-Assistent der HANDELT!
 
-🎬 *YouTube Videos* - "Zeig mir ein Video über..."
-🌦️ *Wetter* - "Wie ist das Wetter in Berlin?"
-📰 *News* - "Nachrichten über..."
-🗺️ *Maps* - "Route nach München"
-🔍 *Web Suche* - "Such mir..."
+🔗 *NEU: Chain Actions!*
+_Ein Satz - mehrere Aktionen:_
+"Erstell ein Angebot und schick es per Mail"
+→ Dokument + E-Mail in einem!
 
 📊 *200+ AI Assets:*
-• Präsentationen & Dokumente
-• E-Mails & Bewerbungen
-• Business Plans & Pitch Decks
-• Fitness & Ernährungspläne
-... und vieles mehr!
+Präsentationen, E-Mails, Business Plans...
 
-📄 *NEU: Exports!*
-• "...als PDF" - PDF Download
-• "Termin für..." - Kalender (.ics)
+🌐 *Live-Daten:*
+YouTube, Wetter, News, Maps
+
+📄 *Exports:*
+PDF, PowerPoint, Kalender (.ics)
 
 💳 /buy - Credits kaufen
 💰 /credits - Deine Credits
-📜 /history - Deine Gespräche
+📜 /history - Gespräche
 
-🧠 _Ich erinnere mich an unsere Gespräche!_
+🧠 _Ich erinnere mich!_
 
-*Schick mir einfach eine Nachricht!* 🚀`
+*Sag mir was du brauchst!* 🚀`
 
 // ============================================
 // MAIN WEBHOOK HANDLER
@@ -642,6 +641,73 @@ _Öffne die .ics Datei um den Termin zu deinem Kalender hinzuzufügen!_`)
     if (intent.type === 'buy') {
       await sendPaymentMenu(chatId, userId)
       return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // CHAIN ACTIONS - Mehrere Aktionen aus einem Satz
+    // ============================================
+    if (mightBeChain(userText)) {
+      const hasCredits = await useCredit(userId)
+      if (!hasCredits) {
+        await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendMessage(chatId, '⚡ *Analysiere Aktionen...*')
+      await addToHistory(userId, 'user', userText)
+
+      try {
+        // Chain parsen
+        const plan = await parseChainActions(userText)
+
+        if (plan.actions.length > 1) {
+          await sendMessage(chatId, `🔗 *${plan.actions.length} Aktionen erkannt:*\n${plan.actions.map((a, i) => `${i + 1}. ${a.type}`).join('\n')}`)
+        }
+
+        // Chain ausführen
+        const result = await executeChain(plan, { userId, chatId, userName }, actionHandlers)
+
+        // Ergebnisse senden
+        for (const actionResult of result.results) {
+          if (actionResult.success && actionResult.result) {
+            const r = actionResult.result
+
+            // Dokumente senden
+            if (r.buffer && (r.type === 'pdf' || r.type === 'pptx')) {
+              await sendChatAction(chatId, 'upload_document')
+              const fileName = `${r.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Dokument'}.${r.type}`
+              await sendDocumentBuffer(chatId, r.buffer, fileName, `📄 *${r.title}*`)
+            }
+
+            // ICS senden
+            if (r.buffer && r.type === 'ics') {
+              await sendDocumentBuffer(chatId, r.buffer, `${r.events?.[0]?.title || 'Event'}.ics`, `📅 *Termin erstellt*`)
+            }
+
+            // WhatsApp Link
+            if (r.type === 'whatsapp_link') {
+              await sendMessage(chatId, `📱 [WhatsApp öffnen](${r.link})`, { disable_web_page_preview: true })
+            }
+
+            // E-Mail Bestätigung
+            if (r.success && actionResult.action.type === 'send_email') {
+              await sendMessage(chatId, `✅ E-Mail gesendet!`)
+            }
+          }
+        }
+
+        // Zusammenfassung
+        const successCount = result.results.filter(r => r.success).length
+        const emoji = result.allSuccessful ? '✅' : '⚠️'
+        await sendMessage(chatId, `${emoji} *${result.summary}*\n\n_${successCount}/${result.results.length} Aktionen erfolgreich_`)
+
+        await addToHistory(userId, 'assistant', result.summary)
+        return NextResponse.json({ ok: true })
+
+      } catch (e) {
+        console.error('Chain execution error:', e)
+        // Fallback zu normaler Asset-Generierung
+      }
     }
 
     // ============================================
