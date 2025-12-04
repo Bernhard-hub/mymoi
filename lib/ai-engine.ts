@@ -455,9 +455,20 @@ export async function generateAsset(userMessage: string): Promise<GenerateResult
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0])
+
+      // WICHTIG: Für Präsentationen muss content ein JSON-String sein, kein Array!
+      let content = parsed.content || text
+      if (parsed.type === 'presentation' && Array.isArray(content)) {
+        // Slides Array zu JSON-String konvertieren
+        content = JSON.stringify(content)
+      } else if (typeof content === 'object') {
+        // Andere Objekte auch zu String konvertieren um [object Object] zu vermeiden
+        content = JSON.stringify(content)
+      }
+
       return {
         type: parsed.type || 'text',
-        content: parsed.content || text,
+        content: content,
         title: parsed.title,
         metadata: parsed.metadata
       }

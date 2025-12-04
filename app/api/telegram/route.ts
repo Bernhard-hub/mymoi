@@ -45,6 +45,25 @@ async function sendDocument(chatId: number, fileUrl: string, fileName: string, c
   })
 }
 
+// Datei direkt als Buffer senden (für PPTX, PDF, etc.)
+async function sendDocumentBuffer(chatId: number, fileBuffer: Buffer, fileName: string, caption?: string) {
+  const formData = new FormData()
+  formData.append('chat_id', chatId.toString())
+  // Buffer zu Uint8Array konvertieren für Blob-Kompatibilität
+  const uint8Array = new Uint8Array(fileBuffer)
+  formData.append('document', new Blob([uint8Array]), fileName)
+  if (caption) {
+    formData.append('caption', caption)
+    formData.append('parse_mode', 'Markdown')
+  }
+
+  const response = await fetch(`${TELEGRAM_API}/sendDocument`, {
+    method: 'POST',
+    body: formData
+  })
+  return response.json()
+}
+
 async function sendChatAction(chatId: number, action: 'typing' | 'upload_document' | 'record_voice') {
   await fetch(`${TELEGRAM_API}/sendChatAction`, {
     method: 'POST',
@@ -80,8 +99,26 @@ async function transcribeVoice(fileId: string): Promise<string> {
 // ============================================
 // INTENT DETECTION - Was will der User?
 // ============================================
-function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'asset', query: string } {
+function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'asset', query: string } {
   const lower = text.toLowerCase()
+
+  // TELEFONNUMMER ERKENNUNG - Die Killer-Feature!
+  // Matches: +43 664 1234567, 0664/1234567, 0043-664-1234567, etc.
+  const phoneRegex = /(\+?\d{1,4}[\s\-\/]?\(?\d{1,4}\)?[\s\-\/]?\d{2,4}[\s\-\/]?\d{2,4}[\s\-\/]?\d{0,4})/
+  const phoneMatch = text.match(phoneRegex)
+  if (phoneMatch && phoneMatch[0].replace(/\D/g, '').length >= 8) {
+    return { type: 'phone', query: phoneMatch[0] }
+  }
+
+  // WhatsApp erwähnt
+  if (lower.includes('whatsapp') || lower.includes('wa ') || lower.includes('whats app')) {
+    return { type: 'whatsapp', query: text.replace(/whatsapp|wa |whats app/gi, '').trim() }
+  }
+
+  // SMS senden
+  if (lower.includes('sms') || lower.includes('nachricht senden') || lower.includes('textnachricht')) {
+    return { type: 'sms', query: text.replace(/sms|nachricht senden|textnachricht/gi, '').trim() }
+  }
 
   // YouTube
   if (lower.includes('youtube') || lower.includes('video') || lower.includes('tutorial') ||
@@ -289,7 +326,7 @@ Viel Spaß mit MOI! 🚀`)
       }
 
       if (message.text === '/buy') {
-        await sendPaymentMenu(chatId)
+        await sendPaymentMenu(chatId, userId)
         return NextResponse.json({ ok: true })
       }
 
@@ -391,10 +428,99 @@ _Daten von Open-Meteo_`)
     }
 
     // ============================================
+    // TELEFONNUMMER - Die Killer-Feature!
+    // ============================================
+    if (intent.type === 'phone') {
+      const phone = intent.query.replace(/\D/g, '')
+      const formattedPhone = intent.query
+
+      // Ländercode erkennen
+      let countryCode = ''
+      let countryName = ''
+      let lookupLinks = ''
+
+      if (phone.startsWith('43') || phone.startsWith('0043')) {
+        countryCode = '43'
+        countryName = 'Österreich'
+        lookupLinks = `🔎 [Herold.at Suche](https://www.herold.at/telefonbuch/suche/?what=${phone})
+🏢 [WKO Firmen-A-Z](https://firmen.wko.at/suche/?query=${phone})
+📋 [Firmenbuch](https://www.firmenbuch.at)`
+      } else if (phone.startsWith('49') || phone.startsWith('0049')) {
+        countryCode = '49'
+        countryName = 'Deutschland'
+        lookupLinks = `🔎 [dasTelefonbuch](https://www.dastelefonbuch.de/R%C3%BCckw%C3%A4rtssuche/${phone})
+🏢 [Handelsregister](https://www.handelsregister.de)
+📋 [Unternehmensregister](https://www.unternehmensregister.de)`
+      } else if (phone.startsWith('41') || phone.startsWith('0041')) {
+        countryCode = '41'
+        countryName = 'Schweiz'
+        lookupLinks = `🔎 [local.ch](https://www.local.ch/de/q?what=${phone})
+🏢 [Zefix Handelsregister](https://www.zefix.ch)`
+      } else {
+        lookupLinks = `🔎 [Google Suche](https://www.google.com/search?q=${phone})
+📋 [Tellows Spam-Check](https://www.tellows.de/num/${phone})`
+      }
+
+      // WhatsApp Link
+      const waLink = `https://wa.me/${phone}`
+      const waBusinessLink = `https://wa.me/${phone}?text=${encodeURIComponent('Guten Tag! Ich habe Ihre Nummer gefunden und wollte mich kurz vorstellen...')}`
+
+      await sendMessage(chatId, `📞 *Telefonnummer erkannt!*
+
+Nummer: \`${formattedPhone}\`
+${countryName ? `🌍 Land: ${countryName}` : ''}
+
+📱 *Kontakt aufnehmen:*
+• [WhatsApp Chat öffnen](${waLink})
+• [WhatsApp mit Vorlage](${waBusinessLink})
+
+🔍 *Nummer recherchieren:*
+${lookupLinks}
+
+💡 *Nächster Schritt:*
+Schick mir den Kontext und ich erstelle die perfekte Nachricht!
+
+_Beispiele:_
+• _"Interesse an seinem BMW auf Willhaben"_
+• _"Anfrage für Immobilien-Exposé"_
+• _"B2B Kooperationsanfrage für sein Unternehmen"_`, { disable_web_page_preview: true })
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // WHATSAPP
+    // ============================================
+    if (intent.type === 'whatsapp') {
+      await sendMessage(chatId, `📱 *WhatsApp Integration*
+
+Schick mir eine Telefonnummer und ich:
+1. Öffne direkt WhatsApp Chat
+2. Erstelle personalisierte Nachricht
+3. Suche die Nummer auf Plattformen (eBay, Willhaben, etc.)
+
+_Beispiel: "+43 664 1234567 - interessiert an Auto auf Willhaben"_`)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // SMS
+    // ============================================
+    if (intent.type === 'sms') {
+      await sendMessage(chatId, `💬 *SMS Versand*
+
+SMS-Feature kommt bald!
+
+Für jetzt: Schick mir eine Telefonnummer und ich erstelle dir eine perfekte SMS-Vorlage die du kopieren kannst.
+
+_Twilio Integration in Entwicklung..._`)
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
     // PAYMENT
     // ============================================
     if (intent.type === 'buy') {
-      await sendPaymentMenu(chatId)
+      await sendPaymentMenu(chatId, userId)
       return NextResponse.json({ ok: true })
     }
 
@@ -429,11 +555,30 @@ Deine kostenlosen Assets sind weg.
         await sendChatAction(chatId, 'upload_document')
         const slides = JSON.parse(asset.content)
         const pptxBuffer = await createPresentation(slides, asset.title || 'Präsentation')
-        const fileName = `${asset.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'presentation'}_${Date.now()}.pptx`
-        const fileUrl = await uploadFile(fileName, pptxBuffer, 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
-        await sendDocument(chatId, fileUrl, fileName, `${emoji} *${asset.title}*\n\n_Fertig zum Präsentieren!_`)
-      } catch {
-        await sendMessage(chatId, `${emoji} *${asset.title || 'Präsentation'}*\n\n${asset.content}`)
+        const fileName = `${asset.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Praesentation'}.pptx`
+
+        // DIREKT als Datei senden - nicht über Supabase Storage!
+        await sendDocumentBuffer(chatId, pptxBuffer, fileName, `${emoji} *${asset.title}*\n\n_Fertig zum Präsentieren!_`)
+      } catch (e) {
+        // Fallback: Wenn PowerPoint-Erstellung fehlschlägt, zeige lesbaren Text
+        console.error('PPTX creation error:', e)
+        let fallbackContent = asset.content
+        // Sicherstellen dass kein [object Object] angezeigt wird
+        if (typeof fallbackContent === 'object') {
+          fallbackContent = JSON.stringify(fallbackContent, null, 2)
+        }
+        // Wenn es JSON ist, formatiere es lesbar als Slides
+        try {
+          const parsed = JSON.parse(fallbackContent)
+          if (Array.isArray(parsed)) {
+            fallbackContent = parsed.map((slide: any, i: number) =>
+              `*Folie ${i + 1}: ${slide.title || 'Untitled'}*\n${(slide.bullets || []).map((b: string) => `• ${b}`).join('\n')}`
+            ).join('\n\n')
+          }
+        } catch {
+          // Keep fallbackContent as is
+        }
+        await sendMessage(chatId, `${emoji} *${asset.title || 'Präsentation'}*\n\n${fallbackContent}`)
       }
     } else if (asset.type === 'code') {
       const lang = asset.metadata?.codeLanguage || ''

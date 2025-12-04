@@ -62,14 +62,17 @@ export async function answerPreCheckoutQuery(preCheckoutQueryId: string, ok: boo
   return response.json()
 }
 
-// Payment Menu senden
-export async function sendPaymentMenu(chatId: number) {
+// Payment Menu senden mit Checkout Links
+export async function sendPaymentMenu(chatId: number, userId?: number) {
+  const baseUrl = process.env.VERCEL_URL || 'mymoi-bot.vercel.app'
+  const userParam = userId ? `&user=${userId}` : `&user=${chatId}`
+
   const keyboard = {
     inline_keyboard: [
-      [{ text: '💎 10 Credits - 1,99€', callback_data: 'buy_credits_10' }],
-      [{ text: '💎 50 Credits - 7,99€', callback_data: 'buy_credits_50' }],
-      [{ text: '💎 100 Credits - 14,99€', callback_data: 'buy_credits_100' }],
-      [{ text: '🚀 UNLIMITED (30 Tage) - 29,99€', callback_data: 'buy_unlimited' }]
+      [{ text: '💎 10 Credits - 1,99€', url: `https://${baseUrl}/api/checkout?package=credits_10${userParam}` }],
+      [{ text: '💎 50 Credits - 7,99€', url: `https://${baseUrl}/api/checkout?package=credits_50${userParam}` }],
+      [{ text: '💎 100 Credits - 14,99€', url: `https://${baseUrl}/api/checkout?package=credits_100${userParam}` }],
+      [{ text: '🚀 UNLIMITED - 29,99€', url: `https://${baseUrl}/api/checkout?package=unlimited${userParam}` }]
     ]
   }
 
@@ -94,9 +97,10 @@ _20% mehr Credits als Bonus!_
 🚀 *UNLIMITED* - 29,99€/Monat
 _Unbegrenzte AI-Power für 30 Tage!_
 
-✅ Sichere Zahlung via Apple Pay, Google Pay oder Kreditkarte
+ Apple Pay |  Google Pay | 💳 Kreditkarte
 ✅ Sofortige Gutschrift
-✅ Keine Abo-Falle`,
+✅ Keine Abo-Falle
+🔒 SSL-verschlüsselt`,
       parse_mode: 'Markdown',
       reply_markup: keyboard
     })
