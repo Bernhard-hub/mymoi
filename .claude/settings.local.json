@@ -1,16 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nFix: Buffer to Uint8Array für Blob-Kompatibilität + Payment APIs\n\n- TypeScript Fix: Buffer zu Uint8Array konvertieren für Blob\n- Neue API: /api/checkout für Stripe Payment\n- Neue API: /api/credits für Credits-Abfrage\n- Telefonnummer-Erkennung Feature\n- WhatsApp/SMS Intent Detection\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(git push)",
-      "Bash(unzip:*)",
-      "Bash(cat:*)",
-      "Bash(npm install:*)",
-      "Bash(npm run build:*)",
-      "Bash(npm i:*)",
-      "Bash(git commit:*)",
-      "Bash(curl:*)"
+      "Bash(node:*)"
     ],
     "deny": [],
     "ask": []
