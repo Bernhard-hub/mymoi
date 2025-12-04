@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase } from '@/lib/supabase'
+import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase, addToHistory, getContextForAI } from '@/lib/supabase'
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
+import { createPDF } from '@/lib/pdf'
+import { createICS, parseCalendarFromAI } from '@/lib/ics'
 import { searchYouTube, searchWeb, getWeather, getNews, getMapLink } from '@/lib/web-search'
 import { sendInvoice, answerPreCheckoutQuery, sendPaymentMenu, processSuccessfulPayment, CREDIT_PACKAGES } from '@/lib/payment'
 
@@ -99,8 +101,22 @@ async function transcribeVoice(fileId: string): Promise<string> {
 // ============================================
 // INTENT DETECTION - Was will der User?
 // ============================================
-function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'asset', query: string } {
+function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'asset', query: string } {
   const lower = text.toLowerCase()
+
+  // PDF Export
+  if (lower.includes('als pdf') || lower.includes('pdf export') || lower.includes('pdf erstellen') ||
+      lower.includes('als dokument') || lower.includes('exportiere als pdf')) {
+    const query = text.replace(/als pdf|pdf export|pdf erstellen|als dokument|exportiere als pdf/gi, '').trim()
+    return { type: 'pdf', query: query || 'Dokument' }
+  }
+
+  // ICS/Kalender Export
+  if (lower.includes('kalender') || lower.includes('ics') || lower.includes('termin') ||
+      lower.includes('event') || lower.includes('in meinen kalender') || lower.includes('calendar')) {
+    const query = text.replace(/kalender|ics|termin|event|in meinen kalender|calendar/gi, '').trim()
+    return { type: 'ics', query: query || 'Event' }
+  }
 
   // TELEFONNUMMER ERKENNUNG - Die Killer-Feature!
   // Matches: +43 664 1234567, 0664/1234567, 0043-664-1234567, etc.
@@ -203,11 +219,17 @@ Ich bin *MOI* - dein ultimativer AI-Assistent mit ECHTEN Links!
 • E-Mails & Bewerbungen
 • Business Plans & Pitch Decks
 • Fitness & Ernährungspläne
-• Horoskope & Tarot
 ... und vieles mehr!
+
+📄 *NEU: Exports!*
+• "...als PDF" - PDF Download
+• "Termin für..." - Kalender (.ics)
 
 💳 /buy - Credits kaufen
 💰 /credits - Deine Credits
+📜 /history - Deine Gespräche
+
+🧠 _Ich erinnere mich an unsere Gespräche!_
 
 *Schick mir einfach eine Nachricht!* 🚀`
 
@@ -327,6 +349,24 @@ Viel Spaß mit MOI! 🚀`)
 
       if (message.text === '/buy') {
         await sendPaymentMenu(chatId, userId)
+        return NextResponse.json({ ok: true })
+      }
+
+      if (message.text === '/history') {
+        const { getConversationHistory } = await import('@/lib/supabase')
+        const history = await getConversationHistory(userId, 10)
+        if (history.length === 0) {
+          await sendMessage(chatId, `📜 *Deine History ist leer*\n\nSchick mir eine Nachricht um loszulegen!`)
+        } else {
+          let historyText = `📜 *Deine letzten Gespräche:*\n\n`
+          history.forEach((msg, i) => {
+            const role = msg.role === 'user' ? '👤' : '🤖'
+            const content = msg.content.substring(0, 100) + (msg.content.length > 100 ? '...' : '')
+            historyText += `${role} ${content}\n\n`
+          })
+          historyText += `_MOI erinnert sich automatisch an deine letzten Gespräche für bessere Antworten!_`
+          await sendMessage(chatId, historyText)
+        }
         return NextResponse.json({ ok: true })
       }
 
@@ -517,6 +557,86 @@ _Twilio Integration in Entwicklung..._`)
     }
 
     // ============================================
+    // PDF EXPORT
+    // ============================================
+    if (intent.type === 'pdf') {
+      const hasCredits = await useCredit(userId)
+      if (!hasCredits) {
+        await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendMessage(chatId, '📄 *Erstelle PDF...*')
+      await sendChatAction(chatId, 'upload_document')
+
+      // Kontext für bessere Ergebnisse
+      const context = await getContextForAI(userId)
+      const asset = await generateAsset(intent.query + context)
+
+      // User-Nachricht speichern
+      await addToHistory(userId, 'user', userText)
+
+      try {
+        const pdfBuffer = await createPDF(asset.title || 'Dokument', asset.content)
+        const fileName = `${asset.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Dokument'}.pdf`
+        await sendDocumentBuffer(chatId, pdfBuffer, fileName, `📄 *${asset.title}*\n\n_Dein PDF ist fertig!_`)
+
+        // Antwort speichern
+        await addToHistory(userId, 'assistant', `PDF erstellt: ${asset.title}`)
+        await saveAsset(userId, 'document', asset.title || 'PDF', asset.content)
+      } catch (e) {
+        console.error('PDF creation error:', e)
+        await sendMessage(chatId, `📄 *${asset.title}*\n\n${asset.content}`)
+      }
+
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // ICS KALENDER EXPORT
+    // ============================================
+    if (intent.type === 'ics') {
+      const hasCredits = await useCredit(userId)
+      if (!hasCredits) {
+        await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendMessage(chatId, '📅 *Erstelle Kalender-Event...*')
+      await sendChatAction(chatId, 'upload_document')
+
+      // Generiere Kalender-Event mit AI
+      const context = await getContextForAI(userId)
+      const asset = await generateAsset(`Erstelle ein Kalender-Event für: ${intent.query}.
+Antworte im JSON-Format: [{"title": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "duration": "1h", "description": "...", "location": "..."}]
+${context}`)
+
+      await addToHistory(userId, 'user', userText)
+
+      try {
+        const events = parseCalendarFromAI(asset.content)
+        const icsContent = createICS(events)
+        const icsBuffer = Buffer.from(icsContent, 'utf-8')
+        const fileName = `${events[0]?.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Event'}.ics`
+
+        await sendDocumentBuffer(chatId, icsBuffer, fileName, `📅 *${events[0]?.title || 'Event'}*
+
+📆 ${events[0]?.date} ${events[0]?.time ? `um ${events[0].time}` : ''}
+${events[0]?.location ? `📍 ${events[0].location}` : ''}
+
+_Öffne die .ics Datei um den Termin zu deinem Kalender hinzuzufügen!_`)
+
+        await addToHistory(userId, 'assistant', `Kalender-Event erstellt: ${events[0]?.title}`)
+        await saveAsset(userId, 'calendar', events[0]?.title || 'Event', JSON.stringify(events))
+      } catch (e) {
+        console.error('ICS creation error:', e)
+        await sendMessage(chatId, `📅 *Kalender*\n\n${asset.content}`)
+      }
+
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
     // PAYMENT
     // ============================================
     if (intent.type === 'buy') {
@@ -543,11 +663,19 @@ Deine kostenlosen Assets sind weg.
 
     await sendMessage(chatId, '⚡ *Erstelle dein Asset...*')
 
-    const asset = await generateAsset(userText)
+    // User-Nachricht zur History hinzufügen
+    await addToHistory(userId, 'user', userText)
+
+    // Kontext aus vorherigen Gesprächen holen
+    const conversationContext = await getContextForAI(userId)
+
+    // Asset generieren MIT Kontext
+    const asset = await generateAsset(userText + conversationContext)
     const emoji = ASSET_EMOJIS[asset.type] || ASSET_EMOJIS.default
 
-    // Asset in DB speichern
+    // Asset und Antwort speichern
     await saveAsset(userId, asset.type, asset.title || 'Untitled', asset.content)
+    await addToHistory(userId, 'assistant', `${asset.type}: ${asset.title || 'Asset'} - ${asset.content.substring(0, 100)}...`)
 
     // Je nach Typ ausliefern
     if (asset.type === 'presentation') {
