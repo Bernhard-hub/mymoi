@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS conversations (id UUID DEFAULT gen_random_uuid() PRIMARY KEY, telegram_id BIGINT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()); CREATE INDEX IF NOT EXISTS idx_conversations_telegram_id ON conversations(telegram_id, created_at DESC);
