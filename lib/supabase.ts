@@ -92,33 +92,42 @@ export interface ConversationMessage {
 
 // Nachricht zur History hinzufügen
 export async function addToHistory(telegramId: number, role: 'user' | 'assistant', content: string) {
-  await supabase
-    .from('conversations')
-    .insert({
-      telegram_id: telegramId,
-      role,
-      content,
-      created_at: new Date().toISOString()
-    })
+  try {
+    await supabase
+      .from('conversations')
+      .insert({
+        telegram_id: telegramId,
+        role,
+        content,
+        created_at: new Date().toISOString()
+      })
+  } catch (e) {
+    // Graceful fail wenn Tabelle nicht existiert
+    console.log('History not available yet')
+  }
 }
 
 // Letzte N Nachrichten holen (für Kontext)
 export async function getConversationHistory(telegramId: number, limit: number = 10): Promise<ConversationMessage[]> {
-  const { data } = await supabase
-    .from('conversations')
-    .select('role, content, created_at')
-    .eq('telegram_id', telegramId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('role, content, created_at')
+      .eq('telegram_id', telegramId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
 
-  if (!data) return []
+    if (error || !data) return []
 
-  // Umkehren für chronologische Reihenfolge
-  return data.reverse().map(msg => ({
-    role: msg.role as 'user' | 'assistant',
-    content: msg.content,
-    timestamp: msg.created_at
-  }))
+    // Umkehren für chronologische Reihenfolge
+    return data.reverse().map(msg => ({
+      role: msg.role as 'user' | 'assistant',
+      content: msg.content,
+      timestamp: msg.created_at
+    }))
+  } catch (e) {
+    return []
+  }
 }
 
 // History für AI-Kontext formatieren
