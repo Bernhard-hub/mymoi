@@ -26,13 +26,16 @@ export async function POST(request: NextRequest) {
     // - finishOnKey: # drücken beendet auch
     // - transcribe: false (wir machen das selbst mit Whisper - besser!)
     // - recordingStatusCallback: wird aufgerufen wenn Aufnahme fertig
+    // Feste Production URL für Callbacks (Preview URLs funktionieren nicht mit Twilio)
+    const baseUrl = 'https://mymoi-bot.vercel.app'
+
     response.record({
       maxLength: 120,
       timeout: 2, // 2 Sek Stille = fertig
       playBeep: false,
-      recordingStatusCallback: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/voice-status`,
+      recordingStatusCallback: `${baseUrl}/api/voice-status`,
       recordingStatusCallbackEvent: ['completed'],
-      action: `${process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/voice-done`,
+      action: `${baseUrl}/api/voice-done`,
     })
 
     // Falls nichts aufgenommen wird (Timeout ohne Sprache)

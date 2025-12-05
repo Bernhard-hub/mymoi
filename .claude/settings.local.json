@@ -18,7 +18,10 @@
       "Bash(git restore:*)",
       "Bash(git commit -m \"$(cat <<''EOF''\nAdd MOI Voice - Phone call interface with Twilio\n\n- /api/voice: Incoming call handler (start recording)\n- /api/voice-done: Call completion handler\n- /api/voice-status: Process recording (Whisper + Claude + SMS)\n- lib/twilio-deliver.ts: SMS/WhatsApp delivery\n- Toll-free number: +1 (888) 664-2970\n\nUses same AI engine as Telegram bot for consistent results.\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(git push:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git reset:*)",
+      "Bash(NODE_TLS_REJECT_UNAUTHORIZED=0 node -e:*)",
+      "Bash(host:*)"
     ],
     "deny": [],
     "ask": []
