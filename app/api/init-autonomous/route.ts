@@ -161,6 +161,36 @@ export async function GET() {
           updated_at TIMESTAMP DEFAULT NOW()
         );
       `
+    },
+    {
+      name: 'calendar_events',
+      sql: `
+        CREATE TABLE IF NOT EXISTS calendar_events (
+          id VARCHAR(100) PRIMARY KEY,
+          user_id BIGINT NOT NULL,
+          title VARCHAR(500) NOT NULL,
+          start_time TIMESTAMP NOT NULL,
+          end_time TIMESTAMP NOT NULL,
+          location VARCHAR(255),
+          description TEXT,
+          is_all_day BOOLEAN DEFAULT false,
+          reminder_minutes INT,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `
+    },
+    {
+      name: 'sms_logs',
+      sql: `
+        CREATE TABLE IF NOT EXISTS sms_logs (
+          id SERIAL PRIMARY KEY,
+          phone VARCHAR(50) NOT NULL,
+          message_sid VARCHAR(100),
+          body TEXT,
+          direction VARCHAR(20),
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `
     }
   ]
 
@@ -311,6 +341,33 @@ CREATE TABLE IF NOT EXISTS user_email_configs (
   updated_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_email_configs_user ON user_email_configs(user_id);
+
+-- 10. Calendar Events (lokaler Kalender)
+CREATE TABLE IF NOT EXISTS calendar_events (
+  id VARCHAR(100) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  title VARCHAR(500) NOT NULL,
+  start_time TIMESTAMP NOT NULL,
+  end_time TIMESTAMP NOT NULL,
+  location VARCHAR(255),
+  description TEXT,
+  is_all_day BOOLEAN DEFAULT false,
+  reminder_minutes INT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_calendar_user ON calendar_events(user_id);
+CREATE INDEX IF NOT EXISTS idx_calendar_start ON calendar_events(start_time);
+
+-- 11. SMS Logs (für Debugging)
+CREATE TABLE IF NOT EXISTS sms_logs (
+  id SERIAL PRIMARY KEY,
+  phone VARCHAR(50) NOT NULL,
+  message_sid VARCHAR(100),
+  body TEXT,
+  direction VARCHAR(20),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_sms_phone ON sms_logs(phone);
 `
 
   return NextResponse.json({

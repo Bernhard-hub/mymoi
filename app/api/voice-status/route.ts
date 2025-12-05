@@ -37,6 +37,14 @@ import {
   generateEmailReply,
   sendEmailReply
 } from '@/lib/email-voice'
+import {
+  isCalendarRequest,
+  parseCalendarRequest,
+  fetchUserCalendarEvents,
+  formatCalendarForVoice,
+  formatSingleEventForVoice,
+  createLocalCalendarEvent
+} from '@/lib/calendar-voice'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -228,7 +236,90 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 2.7 RESEARCH - Wissenschaftliche Artikel suchen
+    // 2.7 CALENDAR VOICE - Termine per Stimme
+    // ============================================
+    if (isCalendarRequest(cleanedTranscript)) {
+      console.log(`📅 Kalender-Anfrage erkannt: ${cleanedTranscript}`)
+
+      const calendarRequest = await parseCalendarRequest(cleanedTranscript)
+
+      // TERMINE AUFLISTEN
+      if (calendarRequest.action === 'list' || !calendarRequest.action || calendarRequest.action === 'unknown') {
+        const events = await fetchUserCalendarEvents(numericUserId, 7)
+
+        const voiceResponse = formatCalendarForVoice(events, 7)
+        await callWithVoiceResponse(from, formatVoiceResponse(voiceResponse, 500))
+
+        // SMS mit Übersicht
+        if (events.length > 0) {
+          const smsText = `📅 Deine Termine:\n\n` +
+            events.slice(0, 5).map(e => {
+              const day = e.start.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+              const time = e.isAllDay ? '(ganztags)' : e.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+              return `• ${day} ${time}: ${e.title}`
+            }).join('\n')
+
+          await sendSMS(from, smsText)
+        } else {
+          await sendSMS(from, '📅 Keine Termine in den nächsten 7 Tagen')
+        }
+
+        return NextResponse.json({ success: true, type: 'calendar_list', count: events.length })
+      }
+
+      // TERMIN ERSTELLEN
+      if (calendarRequest.action === 'create' && calendarRequest.title) {
+        // Datum und Zeit berechnen
+        let startDate = calendarRequest.date || new Date()
+        if (calendarRequest.time) {
+          const [hours, minutes] = calendarRequest.time.split(':').map(Number)
+          startDate.setHours(hours, minutes, 0, 0)
+        }
+
+        const duration = calendarRequest.duration || 60
+        const endDate = new Date(startDate.getTime() + duration * 60 * 1000)
+
+        const event = await createLocalCalendarEvent(numericUserId, {
+          title: calendarRequest.title,
+          start: startDate,
+          end: endDate,
+          location: calendarRequest.location,
+          isAllDay: !calendarRequest.time
+        })
+
+        if (event) {
+          const dayName = startDate.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
+          const timeStr = calendarRequest.time || 'ganztägig'
+
+          await callWithVoiceResponse(from,
+            `Termin erstellt: ${calendarRequest.title}, am ${dayName} um ${timeStr}. ` +
+            (calendarRequest.location ? `Ort: ${calendarRequest.location}.` : '')
+          )
+
+          await sendSMS(from,
+            `✅ Termin erstellt:\n\n` +
+            `📌 ${calendarRequest.title}\n` +
+            `📅 ${dayName}\n` +
+            `⏰ ${timeStr}\n` +
+            (calendarRequest.location ? `📍 ${calendarRequest.location}` : '')
+          )
+
+          // Task recorden
+          await recordCompletedTask({
+            userId: numericUserId,
+            type: 'other',
+            subject: `Termin: ${calendarRequest.title}`,
+            originalText: cleanedTranscript,
+            resultSummary: `Termin am ${dayName} erstellt`
+          })
+
+          return NextResponse.json({ success: true, type: 'calendar_create', event })
+        }
+      }
+    }
+
+    // ============================================
+    // 2.8 RESEARCH - Wissenschaftliche Artikel suchen
     // ============================================
     const researchKeywords = ['artikel', 'paper', 'studie', 'forschung', 'research', 'zenodo', 'arxiv', 'pubmed', 'doi', 'lies', 'finde artikel', 'suche artikel']
     const hasResearchKeyword = researchKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
