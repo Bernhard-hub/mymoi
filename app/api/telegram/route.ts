@@ -76,6 +76,34 @@ async function sendChatAction(chatId: number, action: 'typing' | 'upload_documen
   })
 }
 
+// Text-to-Speech mit ElevenLabs oder Fallback
+async function sendVoiceResponse(chatId: number, text: string) {
+  try {
+    // Kürze den Text auf max 500 Zeichen für Voice
+    const shortText = text.substring(0, 500)
+
+    // Nutze Google TTS (kostenlos, deutsch)
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(shortText)}&tl=de&client=tw-ob`
+
+    // Voice Message senden
+    const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        voice: ttsUrl,
+        caption: text.length > 500 ? '_Gekürzt für Audio_' : undefined
+      })
+    })
+
+    const result = await response.json()
+    return result.ok
+  } catch (error) {
+    console.error('TTS error:', error)
+    return false
+  }
+}
+
 // Voice/Video in Text umwandeln (Groq Whisper)
 async function transcribeAudio(fileId: string, fileType: 'voice' | 'video' = 'voice'): Promise<string> {
   const fileRes = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`)
@@ -125,8 +153,18 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
   // E-MAIL SENDEN - Direkt versenden wenn E-Mail-Adresse erkannt wird
   const emailRegex = /[\w.-]+@[\w.-]+\.\w+/
   const emailMatch = text.match(emailRegex)
-  if (emailMatch && (lower.includes('mail') || lower.includes('schick') || lower.includes('send') || lower.includes('an '))) {
-    return { type: 'email', query: text }
+  if (emailMatch) {
+    // E-Mail-Adresse gefunden - prüfe ob es ein E-Mail Intent ist
+    const isEmailIntent = lower.includes('mail') ||
+                          lower.includes('schick') ||
+                          lower.includes('send') ||
+                          lower.includes('betreff') ||
+                          lower.includes('subject') ||
+                          lower.includes('an ') ||
+                          lower.startsWith(emailMatch[0].toLowerCase()) // Wenn Text mit E-Mail beginnt
+    if (isEmailIntent) {
+      return { type: 'email', query: text }
+    }
   }
 
   // PDF Export
@@ -350,6 +388,7 @@ Viel Spaß mit MOI! 🚀`)
 
     // Text, Voice, Video oder Video Note?
     let userText = ''
+    let respondWithVoice = false // Wenn User Voice schickt, antworten wir auch mit Voice
 
     if (message.voice) {
       await sendChatAction(chatId, 'typing')
@@ -360,6 +399,7 @@ Viel Spaß mit MOI! 🚀`)
         return NextResponse.json({ ok: true })
       }
       await sendMessage(chatId, `📝 _"${userText}"_`)
+      respondWithVoice = true // User hat Voice geschickt, wir antworten auch mit Voice
     } else if (message.video || message.video_note) {
       // Video oder Kreis-Video empfangen - Audio transkribieren
       await sendChatAction(chatId, 'typing')
@@ -1015,6 +1055,12 @@ Deine kostenlosen Assets sind weg.
         }
       } else {
         await sendMessage(chatId, fullMessage)
+      }
+
+      // Wenn User Voice geschickt hat, auch Voice Antwort senden
+      if (respondWithVoice) {
+        await sendChatAction(chatId, 'record_voice')
+        await sendVoiceResponse(chatId, asset.content)
       }
     }
 
