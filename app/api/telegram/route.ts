@@ -881,14 +881,24 @@ NUR DAS JSON AUSGEBEN!`)
 📆 ${events[0]?.date} ${events[0]?.time ? `um ${events[0].time}` : ''}
 ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
 
-        // Direkte Kalender-Links senden
-        await sendMessage(chatId, `📲 *Direkt zum Kalender hinzufügen:*
+        // Direkte Kalender-Links senden mit Inline-Buttons
+        const calendarKeyboard = {
+          inline_keyboard: [
+            [{ text: '📱 Google Calendar öffnen', url: calLinks.google }],
+            [{ text: '📧 Outlook öffnen', url: calLinks.outlook }],
+            [{ text: '💼 Office 365 öffnen', url: calLinks.office365 }]
+          ]
+        }
 
-📱 [Google Calendar](${calLinks.google})
-📧 [Outlook.com](${calLinks.outlook})
-💼 [Office 365](${calLinks.office365})
+        await sendMessage(chatId, `📲 *Klick auf einen Button um den Termin einzutragen:*
 
-_Oder öffne die .ics Datei oben für Apple/andere Kalender_`, { disable_web_page_preview: true })
+⚠️ *Wichtig:* Der Link öffnet deinen Kalender im Browser.
+Dort musst du noch auf "Speichern" klicken!
+
+_iPhone: Die .ics Datei oben antippen → "Zum Kalender hinzufügen"_`, {
+          disable_web_page_preview: true,
+          reply_markup: calendarKeyboard
+        })
 
         await addToHistory(userId, 'assistant', `Kalender-Event erstellt: ${events[0]?.title}`)
         await saveAsset(userId, 'calendar', events[0]?.title || 'Event', JSON.stringify(events))
