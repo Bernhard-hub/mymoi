@@ -3,7 +3,8 @@
     "allow": [
       "Bash(node:*)",
       "Bash(npx supabase db execute:*)",
-      "Bash(PGPASSWORD=\"9La7pNpK33z2ULRA\" psql:*)"
+      "Bash(PGPASSWORD=\"9La7pNpK33z2ULRA\" psql:*)",
+      "Bash(npx vercel:*)"
     ],
     "deny": [],
     "ask": []
