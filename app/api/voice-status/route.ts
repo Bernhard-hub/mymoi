@@ -4,6 +4,7 @@ import { generateAsset } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
 import { sendSMS, sendWhatsApp } from '@/lib/twilio-deliver'
 import { sendEmail, extractEmailFromText } from '@/lib/email'
+import { generateImages, uploadImageToStorage, generateImagePrompts } from '@/lib/image-gen'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -92,13 +93,68 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Website/HTML als Datei hochladen
+    // Website/HTML mit AI-generierten Bildern!
     if (asset.type === 'website') {
       try {
-        const htmlContent = asset.content
-        const fileName = `website_${Date.now()}_${asset.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'page'}.html`
+        let htmlContent = asset.content
+        const timestamp = Date.now()
 
-        const { data, error } = await supabase.storage
+        // 🎨 ECHTE BILDER GENERIEREN - Parallel!
+        console.log('🎨 Generiere AI-Bilder...')
+        const topic = asset.title || cleanedTranscript.substring(0, 50)
+        const imagePrompts = generateImagePrompts(topic, 'landing')
+
+        // Bilder parallel generieren (schnell!)
+        const imageResults = await generateImages(imagePrompts)
+        const generatedImages: string[] = []
+
+        // Bilder hochladen und URLs sammeln
+        for (let i = 0; i < imageResults.length; i++) {
+          const result = imageResults[i]
+          if (result.success && result.imageUrl) {
+            // Wenn es eine externe URL ist, direkt nutzen
+            if (result.imageUrl.startsWith('http')) {
+              // Bild zu Supabase hochladen für permanente URL
+              const imgFileName = `img_${timestamp}_${i}.png`
+              const uploadedUrl = await uploadImageToStorage(result.imageUrl, imgFileName, supabase)
+              generatedImages.push(uploadedUrl || result.imageUrl)
+            } else {
+              // Data URL direkt nutzen (Base64)
+              generatedImages.push(result.imageUrl)
+            }
+          }
+        }
+
+        console.log(`✅ ${generatedImages.length} Bilder generiert`)
+
+        // Unsplash-Platzhalter durch echte Bilder ersetzen
+        if (generatedImages.length > 0) {
+          // Ersetze source.unsplash.com URLs durch generierte Bilder
+          let imgIndex = 0
+          htmlContent = htmlContent.replace(
+            /https:\/\/source\.unsplash\.com\/[^"'\s]+/g,
+            () => {
+              const img = generatedImages[imgIndex % generatedImages.length]
+              imgIndex++
+              return img
+            }
+          )
+
+          // Falls keine Unsplash URLs, füge Hero-Bild ein
+          if (imgIndex === 0 && generatedImages[0]) {
+            // Suche nach erstem img Tag oder füge vor </head> ein
+            if (htmlContent.includes('<img')) {
+              htmlContent = htmlContent.replace(
+                /<img([^>]*)src="[^"]*"([^>]*)>/,
+                `<img$1src="${generatedImages[0]}"$2>`
+              )
+            }
+          }
+        }
+
+        const fileName = `website_${timestamp}_${asset.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'page'}.html`
+
+        const { error } = await supabase.storage
           .from('assets')
           .upload(fileName, htmlContent, {
             contentType: 'text/html'
@@ -107,10 +163,10 @@ export async function POST(request: NextRequest) {
         if (!error) {
           const { data: urlData } = supabase.storage.from('assets').getPublicUrl(fileName)
           fileUrl = urlData.publicUrl
-          console.log(`🌐 Website hochgeladen: ${fileUrl}`)
+          console.log(`🌐 Website mit AI-Bildern hochgeladen: ${fileUrl}`)
         }
       } catch (e) {
-        console.error('HTML Upload Fehler:', e)
+        console.error('HTML/Image Fehler:', e)
       }
     }
 
