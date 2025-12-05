@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
+import { getProactiveVoiceGreeting } from '@/lib/proactive-intelligence'
 
 const VoiceResponse = twilio.twiml.VoiceResponse
 
@@ -15,12 +16,22 @@ export async function POST(request: NextRequest) {
 
     console.log(`📞 Neuer Anruf von ${from} (${callSid})`)
 
+    // User-ID aus Telefonnummer
+    const userId = Math.abs(from.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
+
     const response = new VoiceResponse()
 
-    // Kurze Begrüßung
+    // PROAKTIVE BEGRÜSSUNG - personalisiert!
+    let greeting = 'Hallo! Sprich jetzt.'
+    try {
+      greeting = await getProactiveVoiceGreeting(from, userId)
+    } catch (e) {
+      console.log('Proactive greeting fallback:', e)
+    }
+
     response.say(
       { language: 'de-DE', voice: 'Polly.Vicki' },
-      '<speak><prosody rate="95%">Hallo! Sprich jetzt.</prosody></speak>'
+      `<speak><prosody rate="95%">${greeting}</prosody></speak>`
     )
 
     // Aufnahme starten

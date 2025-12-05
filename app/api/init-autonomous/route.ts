@@ -191,6 +191,38 @@ export async function GET() {
           created_at TIMESTAMP DEFAULT NOW()
         );
       `
+    },
+    {
+      name: 'user_projects',
+      sql: `
+        CREATE TABLE IF NOT EXISTS user_projects (
+          id VARCHAR(100) PRIMARY KEY,
+          user_id BIGINT NOT NULL,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          status VARCHAR(50) DEFAULT 'active',
+          keywords JSONB DEFAULT '[]',
+          related_tasks JSONB DEFAULT '[]',
+          last_mentioned TIMESTAMP DEFAULT NOW(),
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `
+    },
+    {
+      name: 'smart_reminders',
+      sql: `
+        CREATE TABLE IF NOT EXISTS smart_reminders (
+          id VARCHAR(100) PRIMARY KEY,
+          user_id BIGINT NOT NULL,
+          type VARCHAR(50) NOT NULL,
+          message TEXT NOT NULL,
+          trigger_at TIMESTAMP NOT NULL,
+          phone VARCHAR(50) NOT NULL,
+          context TEXT,
+          delivered BOOLEAN DEFAULT false,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `
     }
   ]
 
@@ -368,6 +400,37 @@ CREATE TABLE IF NOT EXISTS sms_logs (
   created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_sms_phone ON sms_logs(phone);
+
+-- 12. User Projects (Projekt-Kontext)
+CREATE TABLE IF NOT EXISTS user_projects (
+  id VARCHAR(100) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  description TEXT,
+  status VARCHAR(50) DEFAULT 'active',
+  keywords JSONB DEFAULT '[]',
+  related_tasks JSONB DEFAULT '[]',
+  last_mentioned TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_projects_user ON user_projects(user_id);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON user_projects(status);
+
+-- 13. Smart Reminders (Intelligente Erinnerungen)
+CREATE TABLE IF NOT EXISTS smart_reminders (
+  id VARCHAR(100) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  message TEXT NOT NULL,
+  trigger_at TIMESTAMP NOT NULL,
+  phone VARCHAR(50) NOT NULL,
+  context TEXT,
+  delivered BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_reminders_user ON smart_reminders(user_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON smart_reminders(trigger_at);
+CREATE INDEX IF NOT EXISTS idx_reminders_delivered ON smart_reminders(delivered);
 `
 
   return NextResponse.json({

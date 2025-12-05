@@ -45,6 +45,18 @@ import {
   formatSingleEventForVoice,
   createLocalCalendarEvent
 } from '@/lib/calendar-voice'
+import {
+  extractReminder,
+  detectProjectFromText,
+  createOrUpdateProject,
+  detectConversationContinuation
+} from '@/lib/proactive-intelligence'
+import {
+  isIntegrationRequest,
+  parseIntegrationRequest,
+  executeIntegration,
+  getAvailableIntegrations
+} from '@/lib/app-integrations'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -361,7 +373,121 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 2.7 FRAGEN ERKENNEN & BEANTWORTEN
+    // 2.9 SMART REMINDERS - Erinnerungen erkennen
+    // ============================================
+    const reminderKeywords = ['erinner', 'remind', 'nachfassen', 'in 3 tagen', 'morgen', 'nächste woche', 'später', 'nicht vergessen']
+    const hasReminderKeyword = reminderKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
+
+    if (hasReminderKeyword) {
+      try {
+        const reminder = await extractReminder(numericUserId, from, cleanedTranscript)
+
+        if (reminder) {
+          const when = reminder.triggerAt.toLocaleDateString('de-DE', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+
+          await callWithVoiceResponse(from,
+            `Alles klar! Ich erinnere dich ${when}. ${reminder.message}`
+          )
+
+          await sendSMS(from,
+            `⏰ Erinnerung gespeichert!\n\n` +
+            `📅 ${when}\n` +
+            `📝 ${reminder.message}`
+          )
+
+          console.log(`⏰ Reminder erstellt: ${reminder.message} → ${when}`)
+          // Weiter mit normaler Verarbeitung falls noch mehr im Transkript
+        }
+      } catch (e) {
+        console.log('Reminder extraction skipped:', e)
+      }
+    }
+
+    // ============================================
+    // 2.10 PROJECT CONTEXT - Projekt erkennen
+    // ============================================
+    try {
+      const existingProject = await detectProjectFromText(numericUserId, cleanedTranscript)
+
+      if (existingProject) {
+        console.log(`📁 Projekt-Kontext: ${existingProject.name}`)
+        // Projekt-Kontext kann für AI-Antworten genutzt werden
+      } else {
+        // Neues Projekt erkennen?
+        const projectKeywords = ['projekt', 'für den kunden', 'für', 'das', 'die']
+        const mightBeProject = projectKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
+
+        if (mightBeProject && cleanedTranscript.length > 50) {
+          await createOrUpdateProject(numericUserId, cleanedTranscript)
+        }
+      }
+    } catch (e) {
+      console.log('Project detection skipped:', e)
+    }
+
+    // ============================================
+    // 2.11 APP INTEGRATIONS - Notion, Trello, etc.
+    // ============================================
+    if (isIntegrationRequest(cleanedTranscript)) {
+      console.log(`🔗 Integration-Anfrage erkannt: ${cleanedTranscript}`)
+
+      try {
+        const integrationRequest = await parseIntegrationRequest(cleanedTranscript)
+
+        if (integrationRequest.type !== 'unknown') {
+          const result = await executeIntegration(integrationRequest)
+
+          if (result.success) {
+            await callWithVoiceResponse(from,
+              `Erledigt! ${result.message}` +
+              (result.url ? ` Link kommt per SMS.` : '')
+            )
+
+            await sendSMS(from,
+              `✅ ${result.message}\n\n` +
+              `📝 ${integrationRequest.title || cleanedTranscript.substring(0, 100)}` +
+              (result.url ? `\n\n🔗 ${result.url}` : '')
+            )
+
+            // Task recorden
+            await recordCompletedTask({
+              userId: numericUserId,
+              type: 'other',
+              subject: `${integrationRequest.type}: ${integrationRequest.title || ''}`,
+              originalText: cleanedTranscript,
+              resultSummary: result.message
+            })
+
+            return NextResponse.json({
+              success: true,
+              type: 'integration',
+              integration: integrationRequest.type,
+              url: result.url
+            })
+          } else {
+            // Integration fehlgeschlagen
+            const available = getAvailableIntegrations()
+            await sendSMS(from,
+              `❌ ${result.message}\n\n` +
+              (available.length > 0
+                ? `Verfügbare Integrationen: ${available.join(', ')}`
+                : 'Keine Integrationen konfiguriert. Kontaktiere den Admin.')
+            )
+          }
+        }
+      } catch (e) {
+        console.log('Integration execution skipped:', e)
+      }
+    }
+
+    // ============================================
+    // 2.12 FRAGEN ERKENNEN & BEANTWORTEN
     // ============================================
     if (isQuestion(cleanedTranscript)) {
       const questionCategory = categorizeQuestion(cleanedTranscript)
