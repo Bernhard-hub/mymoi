@@ -767,7 +767,8 @@ _Twilio Integration in Entwicklung..._`)
     }
 
     // ============================================
-    // E-MAIL DIREKT VERSENDEN
+    // E-MAIL DIREKT VERSENDEN - AUTO-SEND! 🚗
+    // Perfekt für Autofahren: Einfach diktieren, wird sofort gesendet!
     // ============================================
     if (intent.type === 'email') {
       const hasCredits = await useCredit(userId)
@@ -776,38 +777,77 @@ _Twilio Integration in Entwicklung..._`)
         return NextResponse.json({ ok: true })
       }
 
-      await sendMessage(chatId, '📧 *Sende E-Mail...*')
-
       // E-Mail-Adresse extrahieren
       const emailRegex = /[\w.-]+@[\w.-]+\.\w+/
       const emailMatch = intent.query.match(emailRegex)
       const toEmail = emailMatch ? emailMatch[0] : null
 
       if (!toEmail) {
-        await sendMessage(chatId, `❌ Keine gültige E-Mail-Adresse gefunden.\n\n_Beispiel: "Schick eine E-Mail an test@beispiel.de"_`)
+        await sendMessage(chatId, `❌ Keine gültige E-Mail-Adresse gefunden.\n\n_Beispiel: "max@firma.de Treffen morgen um 10"_`)
         return NextResponse.json({ ok: true })
       }
 
-      // Betreff und Inhalt aus dem Text extrahieren
+      // Check ob nur Entwurf gewünscht
+      const lower = intent.query.toLowerCase()
+      const isDraft = lower.includes('entwurf') || lower.includes('draft') || lower.includes('vorschau')
+
+      // Text ohne E-Mail-Adresse
       const textWithoutEmail = intent.query.replace(emailRegex, '').trim()
 
-      // Betreff extrahieren (nach "betreff", "subject", etc.)
-      const subjectMatch = textWithoutEmail.match(/(?:betreff|subject|thema)[:\s]+([^,.\n]+)/i)
-      const subject = subjectMatch ? subjectMatch[1].trim() : 'Nachricht von MOI'
+      // SMART PARSING: Betreff und Body intelligent extrahieren
+      let subject = ''
+      let body = ''
 
-      // Rest als Body oder generieren
-      let body = textWithoutEmail
-        .replace(/(?:betreff|subject|thema)[:\s]+[^,.\n]+/gi, '')
-        .replace(/schick|send|mail|e-mail|an|eine?/gi, '')
+      // Pattern 1: "Betreff: xyz" explizit
+      const subjectMatch = textWithoutEmail.match(/(?:betreff|subject|thema)[:\s]+([^.\n]+)/i)
+      if (subjectMatch) {
+        subject = subjectMatch[1].trim()
+        body = textWithoutEmail.replace(subjectMatch[0], '').trim()
+      } else {
+        // Pattern 2: Erste Phrase = Betreff, Rest = Body
+        // z.B. "Treffen morgen - ich komme um 10 Uhr"
+        const parts = textWithoutEmail.split(/[-–—:]/)
+        if (parts.length >= 2 && parts[0].length < 50) {
+          subject = parts[0].trim()
+          body = parts.slice(1).join(' ').trim()
+        } else {
+          // Pattern 3: Alles ist der Inhalt, Betreff auto-generieren
+          body = textWithoutEmail
+          // Ersten paar Wörter als Betreff
+          const words = textWithoutEmail.split(' ').slice(0, 5).join(' ')
+          subject = words.length > 40 ? words.substring(0, 40) + '...' : words
+        }
+      }
+
+      // Cleanup
+      body = body
+        .replace(/schick|send|mail|e-mail|an |eine? |entwurf|draft|vorschau/gi, '')
         .trim()
+      subject = subject
+        .replace(/schick|send|mail|e-mail|an |eine? /gi, '')
+        .trim() || 'Nachricht'
 
-      // Wenn kein Body, generiere einen
-      if (!body || body.length < 10) {
-        const asset = await generateAsset(`Schreibe eine kurze, freundliche E-Mail. Thema: ${subject}. Halte es kurz (2-3 Sätze).`)
+      // Wenn Body zu kurz, AI generieren lassen
+      if (!body || body.length < 5) {
+        const asset = await generateAsset(`Schreibe eine sehr kurze E-Mail (2-3 Sätze max). Thema: ${subject}. Professionell aber freundlich.`)
         body = asset.content
       }
 
-      // E-Mail senden
+      // NUR ENTWURF?
+      if (isDraft) {
+        await sendMessage(chatId, `📝 *E-Mail Entwurf:*
+
+📬 An: \`${toEmail}\`
+📋 Betreff: ${subject}
+
+${body}
+
+_Sag "senden" um abzuschicken, oder ändere den Text._`)
+        await addToHistory(userId, 'assistant', `E-Mail Entwurf für ${toEmail}`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // SOFORT SENDEN! 🚀
       const { sendEmail } = await import('@/lib/email')
       const result = await sendEmail({
         to: toEmail,
@@ -816,19 +856,17 @@ _Twilio Integration in Entwicklung..._`)
       })
 
       if (result.success) {
-        await sendMessage(chatId, `✅ *E-Mail gesendet!*
+        // Kurze, klare Bestätigung - perfekt für Autofahren!
+        await sendMessage(chatId, `✅ *Gesendet an ${toEmail}*
 
-📬 An: ${toEmail}
-📋 Betreff: ${subject}
+📋 ${subject}
 
-_E-Mail wurde erfolgreich versendet!_`)
+_${body.substring(0, 100)}${body.length > 100 ? '...' : ''}_`)
         await addToHistory(userId, 'assistant', `E-Mail gesendet an ${toEmail}: ${subject}`)
       } else {
-        await sendMessage(chatId, `❌ *E-Mail konnte nicht gesendet werden*
+        await sendMessage(chatId, `❌ *Fehler:* ${result.error || 'E-Mail nicht gesendet'}
 
-Fehler: ${result.error || 'Unbekannter Fehler'}
-
-_Bitte prüfe die E-Mail-Adresse und versuche es erneut._`)
+_Prüfe die Adresse: ${toEmail}_`)
       }
 
       return NextResponse.json({ ok: true })
