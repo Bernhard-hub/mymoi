@@ -102,6 +102,59 @@ SUMMARY:${escapeICS(event.title)}
   return ics
 }
 
+// ============================================
+// DIREKTE KALENDER-LINKS (Google, Apple, Outlook)
+// ============================================
+
+export interface CalendarLinks {
+  google: string
+  outlook: string
+  apple: string // webcal: link
+  office365: string
+}
+
+export function createCalendarLinks(event: CalendarEvent): CalendarLinks {
+  // Datum und Zeit formatieren
+  const startDate = event.date.replace(/-/g, '')
+  const startTime = event.time ? event.time.replace(':', '') + '00' : '000000'
+  const durationMinutes = parseDuration(event.duration)
+
+  // End-Zeit berechnen
+  const endDateTime = addMinutes(event.date, event.time, durationMinutes)
+
+  // Für Google Calendar
+  const googleStart = `${startDate}T${startTime}`
+  const googleEnd = endDateTime
+
+  // URL-encoded Werte
+  const title = encodeURIComponent(event.title)
+  const description = encodeURIComponent(event.description || '')
+  const location = encodeURIComponent(event.location || '')
+
+  return {
+    // Google Calendar
+    google: `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${googleStart}/${googleEnd}&details=${description}&location=${location}`,
+
+    // Outlook.com (Web)
+    outlook: `https://outlook.live.com/calendar/0/deeplink/compose?subject=${title}&startdt=${event.date}T${event.time || '00:00'}:00&enddt=${event.date}T${addMinutesFormatted(event.time || '00:00', durationMinutes)}&body=${description}&location=${location}`,
+
+    // Apple Calendar (webcal link - öffnet iCal)
+    apple: `webcal://`, // Wird durch ICS-Upload ersetzt
+
+    // Office 365
+    office365: `https://outlook.office.com/calendar/0/deeplink/compose?subject=${title}&startdt=${event.date}T${event.time || '00:00'}:00&enddt=${event.date}T${addMinutesFormatted(event.time || '00:00', durationMinutes)}&body=${description}&location=${location}`
+  }
+}
+
+// Hilfsfunktion für Outlook Zeit-Format
+function addMinutesFormatted(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number)
+  const totalMinutes = h * 60 + m + minutes
+  const newH = Math.floor(totalMinutes / 60) % 24
+  const newM = totalMinutes % 60
+  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}:00`
+}
+
 // Hilfsfunktion um Kalender-JSON von AI zu parsen
 export function parseCalendarFromAI(content: string): CalendarEvent[] {
   // Bereinige den Content von Markdown Code-Blocks

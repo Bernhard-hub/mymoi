@@ -40,7 +40,8 @@ export async function sendEmail(params: EmailParams): Promise<EmailResult> {
     }
 
     const { data, error } = await getResend().emails.send({
-      from: params.from || 'MOI <moi@mymoi.app>',
+      // Resend's kostenlose Absender-Adresse (keine Domain-Verifizierung nötig)
+      from: params.from || 'MOI <onboarding@resend.dev>',
       to: Array.isArray(params.to) ? params.to : [params.to],
       subject: params.subject,
       text: params.body,

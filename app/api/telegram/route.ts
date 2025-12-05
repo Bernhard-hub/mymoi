@@ -3,7 +3,7 @@ import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase, addToHisto
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
 import { createPDF } from '@/lib/pdf'
-import { createICS, parseCalendarFromAI } from '@/lib/ics'
+import { createICS, parseCalendarFromAI, createCalendarLinks } from '@/lib/ics'
 import { searchYouTube, searchWeb, getWeather, getNews, getMapLink } from '@/lib/web-search'
 import { sendInvoice, answerPreCheckoutQuery, sendPaymentMenu, processSuccessfulPayment, CREDIT_PACKAGES } from '@/lib/payment'
 import { parseChainActions, executeChain, mightBeChain, ChainResult } from '@/lib/chain-actions'
@@ -632,12 +632,23 @@ NUR DAS JSON AUSGEBEN!`)
         const icsBuffer = Buffer.from(icsContent, 'utf-8')
         const fileName = `${events[0]?.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Event'}.ics`
 
+        // Kalender-Links erstellen
+        const calLinks = createCalendarLinks(events[0])
+
+        // ICS Datei senden
         await sendDocumentBuffer(chatId, icsBuffer, fileName, `📅 *${events[0]?.title || 'Event'}*
 
 📆 ${events[0]?.date} ${events[0]?.time ? `um ${events[0].time}` : ''}
-${events[0]?.location ? `📍 ${events[0].location}` : ''}
+${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
 
-_Öffne die .ics Datei um den Termin zu deinem Kalender hinzuzufügen!_`)
+        // Direkte Kalender-Links senden
+        await sendMessage(chatId, `📲 *Direkt zum Kalender hinzufügen:*
+
+📱 [Google Calendar](${calLinks.google})
+📧 [Outlook.com](${calLinks.outlook})
+💼 [Office 365](${calLinks.office365})
+
+_Oder öffne die .ics Datei oben für Apple/andere Kalender_`, { disable_web_page_preview: true })
 
         await addToHistory(userId, 'assistant', `Kalender-Event erstellt: ${events[0]?.title}`)
         await saveAsset(userId, 'calendar', events[0]?.title || 'Event', JSON.stringify(events))
