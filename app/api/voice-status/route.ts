@@ -6,6 +6,12 @@ import { sendSMS, sendWhatsApp } from '@/lib/twilio-deliver'
 import { sendEmail, extractEmailFromText } from '@/lib/email'
 import { generateImages, uploadImageToStorage, generateImagePrompts } from '@/lib/image-gen'
 import { processWithBrain, enrichWithKnowledge, saveUserKnowledge } from '@/lib/moi-brain'
+import {
+  createFollowUp,
+  saveCustomerUpdate,
+  addToConversationThread,
+  analyzeDeal
+} from '@/lib/moi-autonomous'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -242,8 +248,74 @@ export async function POST(request: NextRequest) {
 
       if (emailResult.success) {
         console.log(`✅ E-Mail gesendet an ${emailAddress}`)
+
+        // 🔄 AUTO FOLLOW-UP aktivieren für E-Mails/Angebote
+        if (asset.type === 'email' || cleanedTranscript.toLowerCase().includes('angebot')) {
+          try {
+            await createFollowUp({
+              userId: numericUserId,
+              phone: from,
+              type: asset.type === 'email' ? 'email' : 'angebot',
+              recipientEmail: emailAddress,
+              subject: asset.title,
+              content: asset.content.substring(0, 500),
+              followUpAfterHours: 72, // 3 Tage
+              maxFollowUps: 3
+            })
+            console.log(`📅 Follow-Up für ${emailAddress} erstellt`)
+          } catch (e) {
+            console.log('Follow-Up erstellen übersprungen:', e)
+          }
+        }
+
+        // 📋 Multi-Channel Sync: E-Mail tracken
+        try {
+          await addToConversationThread(
+            numericUserId,
+            'email',
+            emailAddress,
+            'out',
+            `${asset.title}: ${asset.content.substring(0, 200)}...`
+          )
+        } catch (e) {
+          console.log('Thread-Sync übersprungen:', e)
+        }
       } else {
         console.error(`❌ E-Mail Fehler: ${emailResult.error}`)
+      }
+    }
+
+    // ============================================
+    // 5.5 VOICE-TO-CRM: Kunden-Updates erkennen
+    // ============================================
+    const crmKeywords = ['update', 'kunde', 'gespräch', 'meeting', 'angebot', 'preis', 'rabatt', 'deal']
+    const hasCrmKeyword = crmKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
+
+    if (hasCrmKeyword && !emailAddress) {
+      // Könnte ein CRM-Update sein
+      try {
+        const customerUpdate = await saveCustomerUpdate(numericUserId, cleanedTranscript)
+        if (customerUpdate) {
+          console.log(`📋 CRM Update: ${customerUpdate.customer_name}`)
+
+          // Deal Intelligence: Wenn Preis genannt
+          if (customerUpdate.deal_value) {
+            const dealAnalysis = await analyzeDeal(
+              numericUserId,
+              cleanedTranscript,
+              customerUpdate.deal_value
+            )
+            if (dealAnalysis.suggestedPrice && dealAnalysis.suggestedPrice !== customerUpdate.deal_value) {
+              // Preisempfehlung per SMS
+              await sendSMS(from,
+                `💡 Deal-Tipp: Statt ${customerUpdate.deal_value}€ könntest du ${dealAnalysis.suggestedPrice}€ verlangen.\n\n` +
+                `Grund: ${dealAnalysis.reasoning?.substring(0, 100) || 'Basierend auf vergangenen Deals'}`
+              )
+            }
+          }
+        }
+      } catch (e) {
+        console.log('CRM-Update übersprungen:', e)
       }
     }
 
