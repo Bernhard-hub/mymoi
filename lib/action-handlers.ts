@@ -81,10 +81,17 @@ async function handleSendEmail(params: any, ctx: ActionContext) {
     if (lookedUpEmail) {
       to = lookedUpEmail
     } else {
-      // Kein Kontakt gefunden - Fehler zurückgeben
+      // Kein Kontakt gefunden - hilfreiche Fehlermeldung
       return {
         success: false,
-        error: `Kein Kontakt "${to}" gefunden. Speichere zuerst den Kontakt mit E-Mail-Adresse.`
+        error: `❌ Kein Kontakt "${to}" mit E-Mail gefunden.
+
+💡 *So geht's:*
+1. Gib die E-Mail direkt an:
+   _"Schick E-Mail an name@email.com"_
+
+2. Oder speichere erst den Kontakt:
+   _"Speichere Kontakt ${to} mit E-Mail name@email.com"_`
       }
     }
   }
