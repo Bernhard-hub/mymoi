@@ -22,6 +22,10 @@ import {
   isQuestion,
   categorizeQuestion
 } from '@/lib/voice-response'
+import {
+  researchArticle,
+  formatArticleForVoice
+} from '@/lib/research-access'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -105,7 +109,49 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 2.6 FRAGEN ERKENNEN & BEANTWORTEN
+    // 2.6 RESEARCH - Wissenschaftliche Artikel suchen
+    // ============================================
+    const researchKeywords = ['artikel', 'paper', 'studie', 'forschung', 'research', 'zenodo', 'arxiv', 'pubmed', 'doi', 'lies', 'finde artikel', 'suche artikel']
+    const hasResearchKeyword = researchKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
+    const hasUrl = cleanedTranscript.includes('http') || cleanedTranscript.includes('10.') // DOI
+
+    if (hasResearchKeyword || hasUrl) {
+      console.log(`📚 Research-Anfrage erkannt: ${cleanedTranscript}`)
+
+      const research = await researchArticle(cleanedTranscript)
+
+      if (research.success && research.article) {
+        const voiceResponse = formatArticleForVoice(research.article, research.summary || '')
+        console.log(`📞 Rufe zurück mit Artikel-Summary`)
+
+        // Per Stimme vorlesen
+        await callWithVoiceResponse(from, formatVoiceResponse(voiceResponse, 400))
+
+        // Vollständige Info per SMS
+        const smsText = `📚 ${research.article.title}\n\n` +
+          `👥 ${research.article.authors?.slice(0, 3).join(', ')}\n\n` +
+          `📝 ${research.summary?.substring(0, 400) || research.article.abstract?.substring(0, 400)}\n\n` +
+          `🔗 ${research.article.url}`
+
+        await sendSMS(from, smsText)
+
+        return NextResponse.json({
+          success: true,
+          type: 'research',
+          article: research.article,
+          summary: research.summary
+        })
+      } else {
+        // Nichts gefunden - per Stimme mitteilen
+        await callWithVoiceResponse(from, `Ich konnte leider keinen passenden Artikel finden. ${research.error || ''}`)
+        await sendSMS(from, `❌ Kein Artikel gefunden: ${research.error || 'Versuche es mit anderen Suchbegriffen'}`)
+
+        return NextResponse.json({ success: false, type: 'research', error: research.error })
+      }
+    }
+
+    // ============================================
+    // 2.7 FRAGEN ERKENNEN & BEANTWORTEN
     // ============================================
     if (isQuestion(cleanedTranscript)) {
       const questionCategory = categorizeQuestion(cleanedTranscript)
