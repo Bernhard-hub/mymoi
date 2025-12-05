@@ -17,8 +17,11 @@ export async function POST(request: NextRequest) {
 
     const response = new VoiceResponse()
 
-    // Kurzer Ton statt langer Begrüßung - User weiß was zu tun ist
-    response.play({ digits: '0' }) // Kurzer Piep
+    // Kurze Begrüßung
+    response.say(
+      { language: 'de-DE', voice: 'Polly.Vicki' },
+      '<speak><prosody rate="95%">Hallo! Sprich jetzt.</prosody></speak>'
+    )
 
     // Aufnahme starten
     // - maxLength: 120 Sekunden max

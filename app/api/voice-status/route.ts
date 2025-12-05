@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { generateAsset } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
 import { sendSMS, sendWhatsApp } from '@/lib/twilio-deliver'
+import { sendEmail, extractEmailFromText } from '@/lib/email'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -15,9 +16,16 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData()
 
     const recordingUrl = formData.get('RecordingUrl') as string
-    const from = formData.get('From') as string // Telefonnummer des Anrufers
     const callSid = formData.get('CallSid') as string
     const duration = formData.get('RecordingDuration') as string
+
+    // From ist nicht im recordingStatusCallback - hole es vom Call
+    const twilioClient = (await import('twilio')).default(
+      process.env.TWILIO_ACCOUNT_SID!,
+      process.env.TWILIO_AUTH_TOKEN!
+    )
+    const call = await twilioClient.calls(callSid).fetch()
+    const from = call.from
 
     console.log(`🎤 Verarbeite Aufnahme von ${from}: ${duration}s`)
 
@@ -26,11 +34,11 @@ export async function POST(request: NextRequest) {
     // ============================================
     const user = await getOrCreateVoiceUser(from)
 
-    // Credits prüfen
-    if (user.credits <= 0) {
-      await sendSMS(from, '⚠️ Deine Credits sind aufgebraucht. Mehr unter: moi.app/buy')
-      return NextResponse.json({ success: false, error: 'No credits' })
-    }
+    // Credits prüfen - DEAKTIVIERT für Beta-Phase
+    // if (user.credits <= 0) {
+    //   await sendSMS(from, '⚠️ Deine Credits sind aufgebraucht. Mehr unter: moi.app/buy')
+    //   return NextResponse.json({ success: false, error: 'No credits' })
+    // }
 
     // ============================================
     // 2. Audio herunterladen und transkribieren
@@ -84,10 +92,36 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 5. Ausliefern per SMS (oder WhatsApp falls eingestellt)
+    // 5. E-Mail senden falls E-Mail-Adresse im Transkript
+    // ============================================
+    const emailAddress = extractEmailFromText(cleanedTranscript)
+    if (emailAddress) {
+      console.log(`📧 E-Mail-Adresse erkannt: ${emailAddress}`)
+
+      // E-Mail senden
+      const emailResult = await sendEmail({
+        to: emailAddress,
+        subject: asset.title || 'Dein MOI Ergebnis',
+        body: asset.type === 'presentation'
+          ? `Hier ist deine Präsentation "${asset.title}"!\n\nDownload: ${fileUrl || 'Datei wird verarbeitet...'}`
+          : asset.content,
+        html: asset.type === 'presentation'
+          ? `<p>Hier ist deine Präsentation "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">📥 Download PPTX</a></p>`
+          : undefined
+      })
+
+      if (emailResult.success) {
+        console.log(`✅ E-Mail gesendet an ${emailAddress}`)
+      } else {
+        console.error(`❌ E-Mail Fehler: ${emailResult.error}`)
+      }
+    }
+
+    // ============================================
+    // 6. SMS senden (immer als Bestätigung)
     // ============================================
     const deliveryMethod = user.delivery_preference || 'sms'
-    const message = formatDeliveryMessage(asset, fileUrl)
+    const message = formatDeliveryMessage(asset, fileUrl, emailAddress)
 
     if (deliveryMethod === 'whatsapp' && process.env.TWILIO_WHATSAPP_NUMBER) {
       await sendWhatsApp(from, message, fileUrl)
@@ -209,7 +243,7 @@ async function getOrCreateVoiceUser(phone: string) {
 }
 
 // Nachricht für Delivery formatieren
-function formatDeliveryMessage(asset: any, fileUrl: string | null): string {
+function formatDeliveryMessage(asset: any, fileUrl: string | null, emailSentTo?: string | null): string {
   const emojis: Record<string, string> = {
     text: '📝', listing: '🏷️', presentation: '📊', email: '📧',
     social: '📱', code: '💻', document: '📄', default: '✨'
@@ -223,15 +257,24 @@ function formatDeliveryMessage(asset: any, fileUrl: string | null): string {
       message = `${emoji} Listing fertig:\n\n${asset.content.substring(0, 1400)}`
       break
     case 'presentation':
-      message = `${emoji} Präsentation "${asset.title}" fertig!\n\n${fileUrl || 'Download folgt per E-Mail'}`
+      message = emailSentTo
+        ? `${emoji} Präsentation "${asset.title}" fertig!\n\n📧 E-Mail gesendet an ${emailSentTo}\n\n${fileUrl || ''}`
+        : `${emoji} Präsentation "${asset.title}" fertig!\n\n${fileUrl || 'Download folgt per E-Mail'}`
       break
     case 'email':
-      message = `${emoji} E-Mail:\n\n${asset.content.substring(0, 1400)}`
+      message = emailSentTo
+        ? `${emoji} E-Mail gesendet an ${emailSentTo}!`
+        : `${emoji} E-Mail:\n\n${asset.content.substring(0, 1400)}`
       break
     default:
       message = asset.title
         ? `${emoji} ${asset.title}\n\n${asset.content.substring(0, 1400)}`
         : `${emoji} ${asset.content.substring(0, 1500)}`
+  }
+
+  // E-Mail-Hinweis anhängen wenn gesendet
+  if (emailSentTo && asset.type !== 'presentation' && asset.type !== 'email') {
+    message += `\n\n📧 Auch per E-Mail an ${emailSentTo} gesendet`
   }
 
   // SMS Limit beachten (1600 Zeichen für Twilio)

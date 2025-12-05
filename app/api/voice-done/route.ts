@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     // Kurze Bestätigung - User weiß dass es geklappt hat
     response.say(
       { language: 'de-DE', voice: 'Polly.Vicki' },
-      'Erledigt. Ergebnis kommt gleich.'
+      '<speak><prosody rate="90%">Alles klar! <break time="300ms"/> Wird erledigt.</prosody></speak>'
     )
 
     // Anruf beenden
