@@ -96,26 +96,31 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 6. Credit abziehen & Interaktion speichern
+    // 6. Credit abziehen & Interaktion speichern (graceful fallback)
     // ============================================
-    await supabase
-      .from('voice_users')
-      .update({ credits: user.credits - 1 })
-      .eq('phone', from)
+    try {
+      await supabase
+        .from('voice_users')
+        .update({ credits: user.credits - 1 })
+        .eq('phone', from)
 
-    // Interaktion für Lernen/Analytics speichern
-    await supabase.from('voice_interactions').insert({
-      phone: from,
-      call_sid: callSid,
-      transcript: cleanedTranscript,
-      asset_type: asset.type,
-      asset_title: asset.title,
-      asset_content: asset.content.substring(0, 5000), // Limit für DB
-      file_url: fileUrl,
-      delivery_method: deliveryMethod,
-      duration: parseInt(duration) || 0,
-      created_at: new Date().toISOString()
-    })
+      // Interaktion für Lernen/Analytics speichern
+      await supabase.from('voice_interactions').insert({
+        phone: from,
+        call_sid: callSid,
+        transcript: cleanedTranscript,
+        asset_type: asset.type,
+        asset_title: asset.title,
+        asset_content: asset.content.substring(0, 5000),
+        file_url: fileUrl,
+        delivery_method: deliveryMethod,
+        duration: parseInt(duration) || 0,
+        created_at: new Date().toISOString()
+      })
+    } catch (dbError) {
+      // Tabellen existieren noch nicht - ignorieren, SMS wurde trotzdem gesendet
+      console.log('⚠️ DB save failed (tables may not exist):', dbError)
+    }
 
     console.log(`✅ Erfolgreich an ${from} geliefert`)
 
@@ -168,28 +173,39 @@ async function transcribeWithWhisper(audioUrl: string): Promise<string> {
   return result.text || ''
 }
 
-// Voice User anlegen/holen (separate Tabelle für Telefon-basierte User)
+// Voice User anlegen/holen - mit Fallback wenn Tabelle nicht existiert
 async function getOrCreateVoiceUser(phone: string) {
-  const { data: existing } = await supabase
-    .from('voice_users')
-    .select('*')
-    .eq('phone', phone)
-    .single()
+  try {
+    const { data: existing, error } = await supabase
+      .from('voice_users')
+      .select('*')
+      .eq('phone', phone)
+      .single()
 
-  if (existing) return existing
+    if (error && error.code === 'PGRST205') {
+      // Tabelle existiert nicht - Fallback: unbegrenzte Credits
+      console.log('⚠️ voice_users table not found, using fallback')
+      return { phone, credits: 999, delivery_preference: 'sms' }
+    }
 
-  const { data: newUser } = await supabase
-    .from('voice_users')
-    .insert({
-      phone,
-      credits: 3, // 3 kostenlose Assets
-      delivery_preference: 'sms',
-      created_at: new Date().toISOString()
-    })
-    .select()
-    .single()
+    if (existing) return existing
 
-  return newUser || { phone, credits: 3, delivery_preference: 'sms' }
+    const { data: newUser } = await supabase
+      .from('voice_users')
+      .insert({
+        phone,
+        credits: 3,
+        delivery_preference: 'sms',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single()
+
+    return newUser || { phone, credits: 3, delivery_preference: 'sms' }
+  } catch (e) {
+    console.log('⚠️ voice_users error, using fallback:', e)
+    return { phone, credits: 999, delivery_preference: 'sms' }
+  }
 }
 
 // Nachricht für Delivery formatieren
