@@ -111,7 +111,7 @@ async function transcribeVoice(fileId: string): Promise<string> {
 // ============================================
 // INTENT DETECTION - Was will der User?
 // ============================================
-function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'asset', query: string } {
+function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'email' | 'asset', query: string } {
   const lower = text.toLowerCase().trim()
 
   // KAUFEN - MUSS VOR ALLEM ANDEREN KOMMEN (weil "buy" sonst als "such" erkannt wird)
@@ -120,6 +120,13 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
       lower.includes('payment') || lower.includes('premium') || lower.includes('upgrade') ||
       lower.includes('guthaben') || lower.includes('aufladen')) {
     return { type: 'buy', query: '' }
+  }
+
+  // E-MAIL SENDEN - Direkt versenden wenn E-Mail-Adresse erkannt wird
+  const emailRegex = /[\w.-]+@[\w.-]+\.\w+/
+  const emailMatch = text.match(emailRegex)
+  if (emailMatch && (lower.includes('mail') || lower.includes('schick') || lower.includes('send') || lower.includes('an '))) {
+    return { type: 'email', query: text }
   }
 
   // PDF Export
@@ -670,6 +677,74 @@ _Twilio Integration in Entwicklung..._`)
       } catch (e) {
         console.error('PDF creation error:', e)
         await sendMessage(chatId, `📄 *${asset.title}*\n\n${asset.content}`)
+      }
+
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // E-MAIL DIREKT VERSENDEN
+    // ============================================
+    if (intent.type === 'email') {
+      const hasCredits = await useCredit(userId)
+      if (!hasCredits) {
+        await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendMessage(chatId, '📧 *Sende E-Mail...*')
+
+      // E-Mail-Adresse extrahieren
+      const emailRegex = /[\w.-]+@[\w.-]+\.\w+/
+      const emailMatch = intent.query.match(emailRegex)
+      const toEmail = emailMatch ? emailMatch[0] : null
+
+      if (!toEmail) {
+        await sendMessage(chatId, `❌ Keine gültige E-Mail-Adresse gefunden.\n\n_Beispiel: "Schick eine E-Mail an test@beispiel.de"_`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // Betreff und Inhalt aus dem Text extrahieren
+      const textWithoutEmail = intent.query.replace(emailRegex, '').trim()
+
+      // Betreff extrahieren (nach "betreff", "subject", etc.)
+      const subjectMatch = textWithoutEmail.match(/(?:betreff|subject|thema)[:\s]+([^,.\n]+)/i)
+      const subject = subjectMatch ? subjectMatch[1].trim() : 'Nachricht von MOI'
+
+      // Rest als Body oder generieren
+      let body = textWithoutEmail
+        .replace(/(?:betreff|subject|thema)[:\s]+[^,.\n]+/gi, '')
+        .replace(/schick|send|mail|e-mail|an|eine?/gi, '')
+        .trim()
+
+      // Wenn kein Body, generiere einen
+      if (!body || body.length < 10) {
+        const asset = await generateAsset(`Schreibe eine kurze, freundliche E-Mail. Thema: ${subject}. Halte es kurz (2-3 Sätze).`)
+        body = asset.content
+      }
+
+      // E-Mail senden
+      const { sendEmail } = await import('@/lib/email')
+      const result = await sendEmail({
+        to: toEmail,
+        subject: subject,
+        body: body
+      })
+
+      if (result.success) {
+        await sendMessage(chatId, `✅ *E-Mail gesendet!*
+
+📬 An: ${toEmail}
+📋 Betreff: ${subject}
+
+_E-Mail wurde erfolgreich versendet!_`)
+        await addToHistory(userId, 'assistant', `E-Mail gesendet an ${toEmail}: ${subject}`)
+      } else {
+        await sendMessage(chatId, `❌ *E-Mail konnte nicht gesendet werden*
+
+Fehler: ${result.error || 'Unbekannter Fehler'}
+
+_Bitte prüfe die E-Mail-Adresse und versuche es erneut._`)
       }
 
       return NextResponse.json({ ok: true })
