@@ -66,9 +66,10 @@ export async function POST(request: NextRequest) {
     console.log(`✨ Asset erstellt: ${asset.type} - ${asset.title}`)
 
     // ============================================
-    // 4. Falls Präsentation: PPTX erstellen & Upload
+    // 4. Falls Präsentation/Website: Datei erstellen & Upload
     // ============================================
     let fileUrl: string | null = null
+
     if (asset.type === 'presentation') {
       try {
         const slides = JSON.parse(asset.content)
@@ -91,6 +92,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Website/HTML als Datei hochladen
+    if (asset.type === 'website') {
+      try {
+        const htmlContent = asset.content
+        const fileName = `website_${Date.now()}_${asset.title?.replace(/[^a-zA-Z0-9]/g, '_') || 'page'}.html`
+
+        const { data, error } = await supabase.storage
+          .from('assets')
+          .upload(fileName, htmlContent, {
+            contentType: 'text/html'
+          })
+
+        if (!error) {
+          const { data: urlData } = supabase.storage.from('assets').getPublicUrl(fileName)
+          fileUrl = urlData.publicUrl
+          console.log(`🌐 Website hochgeladen: ${fileUrl}`)
+        }
+      } catch (e) {
+        console.error('HTML Upload Fehler:', e)
+      }
+    }
+
     // ============================================
     // 5. E-Mail senden falls E-Mail-Adresse im Transkript
     // ============================================
@@ -99,15 +122,23 @@ export async function POST(request: NextRequest) {
       console.log(`📧 E-Mail-Adresse erkannt: ${emailAddress}`)
 
       // E-Mail senden
+      const emailBody = asset.type === 'presentation'
+        ? `Hier ist deine Präsentation "${asset.title}"!\n\nDownload: ${fileUrl || 'Datei wird verarbeitet...'}`
+        : asset.type === 'website'
+        ? `Hier ist deine Website "${asset.title}"!\n\nLink: ${fileUrl || 'Wird verarbeitet...'}`
+        : asset.content
+
+      const emailHtml = asset.type === 'presentation'
+        ? `<p>Hier ist deine Präsentation "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">📥 Download PPTX</a></p>`
+        : asset.type === 'website'
+        ? `<p>Hier ist deine Website "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">🌐 Website öffnen</a></p>`
+        : undefined
+
       const emailResult = await sendEmail({
         to: emailAddress,
         subject: asset.title || 'Dein MOI Ergebnis',
-        body: asset.type === 'presentation'
-          ? `Hier ist deine Präsentation "${asset.title}"!\n\nDownload: ${fileUrl || 'Datei wird verarbeitet...'}`
-          : asset.content,
-        html: asset.type === 'presentation'
-          ? `<p>Hier ist deine Präsentation "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">📥 Download PPTX</a></p>`
-          : undefined
+        body: emailBody,
+        html: emailHtml
       })
 
       if (emailResult.success) {
@@ -246,7 +277,7 @@ async function getOrCreateVoiceUser(phone: string) {
 function formatDeliveryMessage(asset: any, fileUrl: string | null, emailSentTo?: string | null): string {
   const emojis: Record<string, string> = {
     text: '📝', listing: '🏷️', presentation: '📊', email: '📧',
-    social: '📱', code: '💻', document: '📄', default: '✨'
+    social: '📱', code: '💻', document: '📄', website: '🌐', default: '✨'
   }
   const emoji = emojis[asset.type] || emojis.default
 
@@ -260,6 +291,11 @@ function formatDeliveryMessage(asset: any, fileUrl: string | null, emailSentTo?:
       message = emailSentTo
         ? `${emoji} Präsentation "${asset.title}" fertig!\n\n📧 E-Mail gesendet an ${emailSentTo}\n\n${fileUrl || ''}`
         : `${emoji} Präsentation "${asset.title}" fertig!\n\n${fileUrl || 'Download folgt per E-Mail'}`
+      break
+    case 'website':
+      message = emailSentTo
+        ? `${emoji} Website "${asset.title}" fertig!\n\n📧 E-Mail gesendet an ${emailSentTo}\n\n🔗 ${fileUrl || ''}`
+        : `${emoji} Website "${asset.title}" fertig!\n\n🔗 ${fileUrl || 'Link folgt...'}`
       break
     case 'email':
       message = emailSentTo

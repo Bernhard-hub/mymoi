@@ -1114,6 +1114,38 @@ Deine kostenlosen Assets sind weg.
         }
         await sendMessage(chatId, `${emoji} *${asset.title || 'Präsentation'}*\n\n${fallbackContent}`)
       }
+    } else if (asset.type === 'website') {
+      // Website/HTML als Datei hochladen und Link senden
+      try {
+        await sendChatAction(chatId, 'upload_document')
+        const htmlContent = asset.content
+        const fileName = `${asset.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Website'}.html`
+        const htmlBuffer = Buffer.from(htmlContent, 'utf-8')
+
+        // HTML auf Supabase hochladen für Preview-Link
+        const uploadFileName = `website_${Date.now()}_${fileName}`
+        const { error: uploadError } = await supabase.storage
+          .from('assets')
+          .upload(uploadFileName, htmlContent, { contentType: 'text/html' })
+
+        let previewUrl = ''
+        if (!uploadError) {
+          const { data: urlData } = supabase.storage.from('assets').getPublicUrl(uploadFileName)
+          previewUrl = urlData.publicUrl
+        }
+
+        // HTML-Datei zum Download senden
+        await sendDocumentBuffer(chatId, htmlBuffer, fileName, `${emoji} *${asset.title}*\n\n_Deine Website ist fertig!_`)
+
+        // Preview-Link senden wenn Upload erfolgreich
+        if (previewUrl) {
+          await sendMessage(chatId, `🔗 *Live-Preview:*\n[Website öffnen](${previewUrl})`, { disable_web_page_preview: false })
+        }
+      } catch (e) {
+        console.error('HTML creation error:', e)
+        // Fallback: HTML-Code als Text
+        await sendMessage(chatId, `${emoji} *${asset.title || 'Website'}*\n\n\`\`\`html\n${asset.content.substring(0, 3500)}\n\`\`\``)
+      }
     } else if (asset.type === 'code') {
       const lang = asset.metadata?.codeLanguage || ''
       await sendMessage(chatId, `${emoji} *${asset.title || 'Code'}*\n\n\`\`\`${lang}\n${asset.content}\n\`\`\``)
