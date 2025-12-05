@@ -391,14 +391,19 @@ Viel Spaß mit MOI! 🚀`)
 
     if (message.voice) {
       await sendChatAction(chatId, 'typing')
-      await sendMessage(chatId, '🎤 *Höre zu...*')
       userText = await transcribeVoice(message.voice.file_id)
       if (!userText) {
-        await sendMessage(chatId, 'Konnte die Sprachnachricht nicht verstehen. Versuch es nochmal!')
+        await sendMessage(chatId, '❌ Nicht verstanden. Nochmal versuchen!')
         return NextResponse.json({ ok: true })
       }
-      await sendMessage(chatId, `📝 _"${userText}"_`)
-      respondWithVoice = true // User hat Voice geschickt, wir antworten auch mit Voice
+
+      // 🚗 AUTO-MODUS: Bei E-Mail keine Bestätigung, direkt ausführen!
+      const hasEmail = /[\w.-]+@[\w.-]+\.\w+/.test(userText)
+      if (!hasEmail) {
+        // Nur bei Nicht-E-Mails das Transkript zeigen
+        await sendMessage(chatId, `🎤 _"${userText}"_`)
+      }
+      respondWithVoice = true
     } else if (message.video || message.video_note) {
       // Video oder Kreis-Video empfangen - Audio transkribieren
       await sendChatAction(chatId, 'typing')
