@@ -10,8 +10,18 @@ import {
   createFollowUp,
   saveCustomerUpdate,
   addToConversationThread,
-  analyzeDeal
+  analyzeDeal,
+  checkForDuplicateTask,
+  recordCompletedTask,
+  getTaskStatus,
+  getRecentTasks
 } from '@/lib/moi-autonomous'
+import {
+  callWithVoiceResponse,
+  formatVoiceResponse,
+  isQuestion,
+  categorizeQuestion
+} from '@/lib/voice-response'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -92,6 +102,110 @@ export async function POST(request: NextRequest) {
     if (learnMatch) {
       await saveUserKnowledge(numericUserId, learnMatch[1], learnMatch[2])
       await sendSMS(from, `🧠 Gemerkt: "${learnMatch[1]}" = "${learnMatch[2]}"`)
+    }
+
+    // ============================================
+    // 2.6 FRAGEN ERKENNEN & BEANTWORTEN
+    // ============================================
+    if (isQuestion(cleanedTranscript)) {
+      const questionCategory = categorizeQuestion(cleanedTranscript)
+      console.log(`❓ Frage erkannt (${questionCategory}): ${cleanedTranscript}`)
+
+      let voiceAnswer: string | null = null
+
+      // STATUS-FRAGEN: "Habe ich schon...?", "Wurde... gesendet?"
+      if (questionCategory === 'status') {
+        // Suche nach dem Thema der Frage
+        const searchTerms = cleanedTranscript
+          .replace(/\?/g, '')
+          .replace(/(schon|bereits|erledigt|gesendet|gemacht|habe ich|wurde|status)/gi, '')
+          .trim()
+
+        const taskStatus = await getTaskStatus(numericUserId, searchTerms)
+
+        if (taskStatus) {
+          voiceAnswer = `Ja, das wurde erledigt. ${taskStatus.result_summary || ''}`
+        } else {
+          // Letzte Tasks durchsuchen
+          const recentTasks = await getRecentTasks(numericUserId, 5)
+          if (recentTasks.length > 0) {
+            const relevant = recentTasks.find(t =>
+              t.recipient?.toLowerCase().includes(searchTerms.toLowerCase()) ||
+              t.subject?.toLowerCase().includes(searchTerms.toLowerCase())
+            )
+            if (relevant) {
+              voiceAnswer = `Ja, ${relevant.task_type} an ${relevant.recipient} wurde erledigt. ${relevant.result_summary || ''}`
+            } else {
+              voiceAnswer = `Ich habe keinen Auftrag zu "${searchTerms}" gefunden. Deine letzten Aktionen waren: ${recentTasks.slice(0, 3).map(t => t.task_type + ' an ' + (t.recipient || 'unbekannt')).join(', ')}.`
+            }
+          } else {
+            voiceAnswer = `Dazu habe ich keine Aufzeichnung. Soll ich dir helfen, das zu erledigen?`
+          }
+        }
+      }
+
+      // INFO-FRAGEN: Wissen abrufen
+      else if (questionCategory === 'info') {
+        // AI für allgemeine Fragen nutzen
+        const Anthropic = (await import('@anthropic-ai/sdk')).default
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 256,
+          system: `Du bist MOI, ein hilfreicher Sprachassistent. Antworte kurz und prägnant (max 2-3 Sätze), da die Antwort vorgelesen wird. Keine Formatierung, kein Markdown.`,
+          messages: [{ role: 'user', content: cleanedTranscript }]
+        })
+
+        voiceAnswer = response.content[0].type === 'text' ? response.content[0].text : null
+      }
+
+      // ALLGEMEINE FRAGEN: AI antwortet
+      else if (questionCategory === 'general') {
+        const Anthropic = (await import('@anthropic-ai/sdk')).default
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+
+        const response = await anthropic.messages.create({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 256,
+          system: `Du bist MOI, ein hilfreicher Sprachassistent. Antworte kurz und prägnant (max 2-3 Sätze), da die Antwort vorgelesen wird. Keine Formatierung, kein Markdown.`,
+          messages: [{ role: 'user', content: cleanedTranscript }]
+        })
+
+        voiceAnswer = response.content[0].type === 'text' ? response.content[0].text : null
+      }
+
+      // Antwort per Rückruf vorlesen!
+      if (voiceAnswer) {
+        const formattedAnswer = formatVoiceResponse(voiceAnswer)
+        console.log(`📞 Rufe zurück mit Antwort: ${formattedAnswer.substring(0, 100)}...`)
+
+        // Sofort zurückrufen
+        await callWithVoiceResponse(from, formattedAnswer)
+
+        // Auch per SMS senden (als Backup/Referenz)
+        await sendSMS(from, `💬 MOI: ${voiceAnswer}`)
+
+        return NextResponse.json({ success: true, type: 'voice_answer', answer: voiceAnswer })
+      }
+    }
+
+    // ============================================
+    // 2.7 DUPLIKAT-CHECK: Schon erledigt?
+    // ============================================
+    const duplicateCheck = await checkForDuplicateTask(numericUserId, cleanedTranscript, 24)
+
+    if (duplicateCheck.isDuplicate && duplicateCheck.similarity >= 85) {
+      console.log(`🔄 Duplikat erkannt: ${duplicateCheck.message}`)
+
+      // Per Stimme informieren
+      const duplicateMessage = `Moment, das habe ich schon erledigt. ${duplicateCheck.existingTask?.result_summary || 'Der Auftrag wurde bereits ausgeführt.'}`
+      await callWithVoiceResponse(from, duplicateMessage)
+
+      // Auch SMS
+      await sendSMS(from, `⚠️ ${duplicateCheck.message}`)
+
+      return NextResponse.json({ success: true, type: 'duplicate', message: duplicateCheck.message })
     }
 
     // ============================================
@@ -356,6 +470,31 @@ export async function POST(request: NextRequest) {
     } catch (dbError) {
       // Tabellen existieren noch nicht - ignorieren, SMS wurde trotzdem gesendet
       console.log('⚠️ DB save failed (tables may not exist):', dbError)
+    }
+
+    // ============================================
+    // 7. TASK RECORDING - Erledigten Auftrag speichern
+    // ============================================
+    try {
+      const taskType = asset.type === 'email' ? 'email'
+        : asset.type === 'presentation' ? 'other'
+        : asset.type === 'website' ? 'website'
+        : asset.type === 'social' ? 'sms'
+        : 'other'
+
+      await recordCompletedTask({
+        userId: numericUserId,
+        type: taskType as any,
+        recipient: emailAddress || undefined,
+        subject: asset.title,
+        originalText: cleanedTranscript,
+        resultSummary: emailAddress
+          ? `${asset.type} an ${emailAddress} gesendet`
+          : `${asset.type} erstellt: ${asset.title}`
+      })
+      console.log(`📝 Task recorded: ${asset.type}`)
+    } catch (e) {
+      console.log('Task recording skipped:', e)
     }
 
     console.log(`✅ Erfolgreich an ${from} geliefert`)

@@ -870,7 +870,223 @@ export interface MoiNetworkMessage {
 }
 
 // ============================================
-// 10. COLLECTIVE INTELLIGENCE (Future)
+// 10. TASK TRACKING - Erledigte Aufträge erkennen
+// ============================================
+
+export interface TaskRecord {
+  id: string
+  user_id: number
+  task_type: 'email' | 'angebot' | 'termin' | 'website' | 'reminder' | 'sms' | 'research' | 'other'
+  recipient?: string
+  subject?: string
+  content_hash: string  // Hash für Duplikat-Erkennung
+  status: 'completed' | 'failed' | 'pending'
+  result_summary?: string
+  created_at: string
+}
+
+// Hash für Auftrags-Vergleich erstellen
+function createTaskHash(type: string, recipient: string, keywords: string[]): string {
+  const normalized = `${type}|${recipient.toLowerCase()}|${keywords.sort().join('|')}`
+  // Simple hash
+  let hash = 0
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash
+  }
+  return `hash_${Math.abs(hash).toString(16)}`
+}
+
+// Keywords aus Anfrage extrahieren
+async function extractTaskKeywords(text: string): Promise<{
+  type: string
+  recipient: string
+  keywords: string[]
+}> {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 256,
+    system: `Extrahiere Task-Informationen aus dem Text.
+Antworte NUR mit JSON:
+{
+  "type": "email|angebot|termin|website|reminder|sms|research|other",
+  "recipient": "Name oder Email der Person",
+  "keywords": ["wichtigste", "begriffe", "max 5"]
+}`,
+    messages: [{ role: 'user', content: text }]
+  })
+
+  const responseText = response.content[0].type === 'text' ? response.content[0].text : '{}'
+  try {
+    return JSON.parse(responseText.match(/\{[\s\S]*\}/)?.[0] || '{}')
+  } catch {
+    return { type: 'other', recipient: '', keywords: [] }
+  }
+}
+
+// Prüfen ob ähnlicher Auftrag schon erledigt wurde
+export async function checkForDuplicateTask(
+  userId: number,
+  taskText: string,
+  hoursBack: number = 24
+): Promise<{
+  isDuplicate: boolean
+  existingTask?: TaskRecord
+  similarity: number
+  message?: string
+}> {
+  try {
+    // Keywords extrahieren
+    const { type, recipient, keywords } = await extractTaskKeywords(taskText)
+    const taskHash = createTaskHash(type, recipient, keywords)
+
+    // Zeitfenster
+    const since = new Date(Date.now() - hoursBack * 60 * 60 * 1000).toISOString()
+
+    // Exakten Hash suchen
+    const { data: exactMatch } = await supabase
+      .from('task_records')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('content_hash', taskHash)
+      .eq('status', 'completed')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    if (exactMatch && exactMatch.length > 0) {
+      return {
+        isDuplicate: true,
+        existingTask: exactMatch[0],
+        similarity: 100,
+        message: `Dieser Auftrag wurde bereits erledigt (${formatTimeAgo(exactMatch[0].created_at)})`
+      }
+    }
+
+    // Ähnliche Aufträge suchen (gleicher Typ + Empfänger)
+    const { data: similarTasks } = await supabase
+      .from('task_records')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('task_type', type)
+      .eq('status', 'completed')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    if (similarTasks && similarTasks.length > 0) {
+      // Empfänger vergleichen
+      for (const task of similarTasks) {
+        if (task.recipient && recipient) {
+          const recipientMatch = task.recipient.toLowerCase().includes(recipient.toLowerCase()) ||
+                                  recipient.toLowerCase().includes(task.recipient.toLowerCase())
+          if (recipientMatch) {
+            return {
+              isDuplicate: true,
+              existingTask: task,
+              similarity: 85,
+              message: `Ähnlicher Auftrag für "${task.recipient}" bereits erledigt (${formatTimeAgo(task.created_at)}): ${task.result_summary}`
+            }
+          }
+        }
+      }
+    }
+
+    return { isDuplicate: false, similarity: 0 }
+  } catch (e) {
+    console.error('Duplicate check error:', e)
+    return { isDuplicate: false, similarity: 0 }
+  }
+}
+
+// Hilfsfunktion für Zeitanzeige
+function formatTimeAgo(timestamp: string): string {
+  const diff = Date.now() - new Date(timestamp).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 60) return `vor ${minutes} Minuten`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `vor ${hours} Stunden`
+  return `vor ${Math.floor(hours / 24)} Tagen`
+}
+
+// Erledigten Auftrag speichern
+export async function recordCompletedTask(params: {
+  userId: number
+  type: 'email' | 'angebot' | 'termin' | 'website' | 'reminder' | 'sms' | 'research' | 'other'
+  recipient?: string
+  subject?: string
+  originalText: string
+  resultSummary: string
+  status?: 'completed' | 'failed'
+}): Promise<string> {
+  try {
+    const { type, recipient, keywords } = await extractTaskKeywords(params.originalText)
+    const taskHash = createTaskHash(type, recipient || params.recipient || '', keywords)
+    const taskId = `task_${Date.now()}_${params.userId}`
+
+    await supabase.from('task_records').insert({
+      id: taskId,
+      user_id: params.userId,
+      task_type: params.type,
+      recipient: params.recipient || recipient,
+      subject: params.subject,
+      content_hash: taskHash,
+      status: params.status || 'completed',
+      result_summary: params.resultSummary,
+      created_at: new Date().toISOString()
+    })
+
+    console.log(`✅ Task recorded: ${taskId} (${params.type})`)
+    return taskId
+  } catch (e) {
+    console.error('Task record error:', e)
+    return ''
+  }
+}
+
+// Auftrags-Historie für User abrufen
+export async function getRecentTasks(
+  userId: number,
+  limit: number = 10
+): Promise<TaskRecord[]> {
+  try {
+    const { data } = await supabase
+      .from('task_records')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit)
+
+    return data || []
+  } catch {
+    return []
+  }
+}
+
+// Status eines bestimmten Auftrags prüfen
+export async function getTaskStatus(
+  userId: number,
+  query: string
+): Promise<TaskRecord | null> {
+  try {
+    // Suche nach Empfänger oder Subject
+    const { data } = await supabase
+      .from('task_records')
+      .select('*')
+      .eq('user_id', userId)
+      .or(`recipient.ilike.%${query}%,subject.ilike.%${query}%`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    return data?.[0] || null
+  } catch {
+    return null
+  }
+}
+
+// ============================================
+// 11. COLLECTIVE INTELLIGENCE (Future)
 // ============================================
 
 // Anonymisierte Insights speichern

@@ -25,7 +25,8 @@
       "WebSearch",
       "Bash(printf \"y\\ny\\n\")",
       "Bash(printf:*)",
-      "WebFetch(domain:api.together.xyz)"
+      "WebFetch(domain:api.together.xyz)",
+      "Bash(git -C D:/MYMOI status --short)"
     ],
     "deny": [],
     "ask": []

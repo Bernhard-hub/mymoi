@@ -128,6 +128,22 @@ export async function GET() {
           created_at TIMESTAMP DEFAULT NOW()
         );
       `
+    },
+    {
+      name: 'task_records',
+      sql: `
+        CREATE TABLE IF NOT EXISTS task_records (
+          id VARCHAR(100) PRIMARY KEY,
+          user_id BIGINT NOT NULL,
+          task_type VARCHAR(50) NOT NULL,
+          recipient VARCHAR(255),
+          subject VARCHAR(500),
+          content_hash VARCHAR(100) NOT NULL,
+          status VARCHAR(50) DEFAULT 'completed',
+          result_summary TEXT,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `
     }
   ]
 
@@ -247,6 +263,22 @@ CREATE TABLE IF NOT EXISTS collective_insights (
   created_at TIMESTAMP DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_insights_category ON collective_insights(category);
+
+-- 8. Task Records (Erledigte Aufträge tracken)
+CREATE TABLE IF NOT EXISTS task_records (
+  id VARCHAR(100) PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  task_type VARCHAR(50) NOT NULL,
+  recipient VARCHAR(255),
+  subject VARCHAR(500),
+  content_hash VARCHAR(100) NOT NULL,
+  status VARCHAR(50) DEFAULT 'completed',
+  result_summary TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tasks_user ON task_records(user_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_hash ON task_records(content_hash);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON task_records(created_at);
 `
 
   return NextResponse.json({
