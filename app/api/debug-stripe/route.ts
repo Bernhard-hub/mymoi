@@ -1,49 +1,37 @@
 import { NextResponse } from 'next/server'
-import Stripe from 'stripe'
+import { createCheckoutSession, isStripeConfigured } from '@/lib/stripe'
 
 export async function GET() {
-  const key = process.env.STRIPE_SECRET_KEY
-  const keyPrefix = key?.substring(0, 15) || 'NOT SET'
+  const configured = isStripeConfigured()
+  const keyPrefix = process.env.STRIPE_SECRET_KEY?.substring(0, 15) || 'NOT SET'
 
   let sessionTest = null
-  let error = null
   let sessionUrl = null
+  let error = null
 
-  if (key && key.startsWith('sk_')) {
+  if (configured) {
     try {
-      const stripe = new Stripe(key)
+      const session = await createCheckoutSession(
+        'credits_10',
+        123456,
+        'https://mymoi-bot.vercel.app/api/checkout/success',
+        'https://mymoi-bot.vercel.app/'
+      )
 
-      const session = await stripe.checkout.sessions.create({
-        payment_method_types: ['card'],
-        line_items: [{
-          price_data: {
-            currency: 'eur',
-            product_data: {
-              name: 'MOI 10 Credits',
-              description: 'Test'
-            },
-            unit_amount: 199
-          },
-          quantity: 1
-        }],
-        mode: 'payment',
-        success_url: 'https://mymoi-bot.vercel.app/api/checkout/success?session_id={CHECKOUT_SESSION_ID}',
-        cancel_url: 'https://mymoi-bot.vercel.app/',
-        metadata: {
-          telegram_id: '123456',
-          credits: '10'
-        }
-      })
-
-      sessionTest = 'OK'
-      sessionUrl = session.url
+      if (session) {
+        sessionTest = 'OK'
+        sessionUrl = session.url
+      } else {
+        sessionTest = 'FAILED'
+      }
     } catch (e: any) {
-      error = e.message || String(e)
-      sessionTest = 'FAILED'
+      error = e.message
+      sessionTest = 'ERROR'
     }
   }
 
   return NextResponse.json({
+    configured,
     keyPrefix,
     sessionTest,
     sessionUrl,
