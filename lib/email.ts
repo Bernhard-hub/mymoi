@@ -32,6 +32,9 @@ export interface EmailResult {
   error?: string
 }
 
+// Resend Trial: Kann nur an diese verifizierte E-Mail senden
+const VERIFIED_EMAIL = 'bernhard.strobl@kph-es.at'
+
 export async function sendEmail(params: EmailParams): Promise<EmailResult> {
   try {
     // Validierung
@@ -39,13 +42,28 @@ export async function sendEmail(params: EmailParams): Promise<EmailResult> {
       return { success: false, error: 'Empfänger und Betreff erforderlich' }
     }
 
+    const originalTo = Array.isArray(params.to) ? params.to.join(', ') : params.to
+
+    // RESEND TRIAL WORKAROUND:
+    // Sende alle E-Mails an die verifizierte Adresse
+    // mit dem Original-Empfänger im Betreff
+    const isTrialMode = !process.env.RESEND_DOMAIN_VERIFIED
+    const actualTo = isTrialMode ? VERIFIED_EMAIL : originalTo
+    const actualSubject = isTrialMode && originalTo !== VERIFIED_EMAIL
+      ? `[Für: ${originalTo}] ${params.subject}`
+      : params.subject
+
+    // Füge Weiterleite-Hinweis hinzu wenn Trial Mode
+    const bodyWithHint = isTrialMode && originalTo !== VERIFIED_EMAIL
+      ? `📧 WEITERLEITEN AN: ${originalTo}\n${'─'.repeat(40)}\n\n${params.body}`
+      : params.body
+
     const { data, error } = await getResend().emails.send({
-      // Resend's kostenlose Absender-Adresse (keine Domain-Verifizierung nötig)
       from: params.from || 'MOI <onboarding@resend.dev>',
-      to: Array.isArray(params.to) ? params.to : [params.to],
-      subject: params.subject,
-      text: params.body,
-      html: params.html || formatEmailHtml(params.subject, params.body),
+      to: [actualTo],
+      subject: actualSubject,
+      text: bodyWithHint,
+      html: params.html || formatEmailHtml(params.subject, bodyWithHint, isTrialMode ? originalTo : undefined),
       attachments: params.attachments?.map(a => ({
         filename: a.filename,
         content: a.content
@@ -66,11 +84,16 @@ export async function sendEmail(params: EmailParams): Promise<EmailResult> {
 }
 
 // HTML Template für E-Mails
-function formatEmailHtml(subject: string, body: string): string {
+function formatEmailHtml(subject: string, body: string, forwardTo?: string): string {
   const formattedBody = body
     .split('\n')
     .map(line => `<p style="margin: 0 0 10px 0;">${line}</p>`)
     .join('')
+
+  const forwardBanner = forwardTo ? `
+  <div style="background: #ff9800; padding: 15px; border-radius: 10px 10px 0 0; text-align: center;">
+    <p style="color: white; margin: 0; font-size: 16px; font-weight: bold;">📧 WEITERLEITEN AN: ${forwardTo}</p>
+  </div>` : ''
 
   return `
 <!DOCTYPE html>
@@ -80,7 +103,8 @@ function formatEmailHtml(subject: string, body: string): string {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 10px 10px 0 0;">
+  ${forwardBanner}
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; ${forwardTo ? '' : 'border-radius: 10px 10px 0 0;'}">
     <h1 style="color: white; margin: 0; font-size: 24px;">${subject}</h1>
   </div>
   <div style="background: #ffffff; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 10px 10px;">
