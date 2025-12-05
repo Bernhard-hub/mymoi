@@ -104,7 +104,15 @@ async function transcribeVoice(fileId: string): Promise<string> {
 // INTENT DETECTION - Was will der User?
 // ============================================
 function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'asset', query: string } {
-  const lower = text.toLowerCase()
+  const lower = text.toLowerCase().trim()
+
+  // KAUFEN - MUSS VOR ALLEM ANDEREN KOMMEN (weil "buy" sonst als "such" erkannt wird)
+  if (lower === 'buy' || lower === '/buy' || lower.includes('credits kaufen') ||
+      lower.includes('kaufen') || lower.includes('credits') || lower.includes('bezahlen') ||
+      lower.includes('payment') || lower.includes('premium') || lower.includes('upgrade') ||
+      lower.includes('guthaben') || lower.includes('aufladen')) {
+    return { type: 'buy', query: '' }
+  }
 
   // PDF Export
   if (lower.includes('als pdf') || lower.includes('pdf export') || lower.includes('pdf erstellen') ||
@@ -174,12 +182,6 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
       lower.includes('link') || lower.includes('website') || lower.includes('seite')) {
     const query = text.replace(/such|google|find|link|website|seite/gi, '').trim()
     return { type: 'web', query: query || text }
-  }
-
-  // Kaufen
-  if (lower.includes('kaufen') || lower.includes('credits') || lower.includes('bezahlen') ||
-      lower.includes('payment') || lower.includes('premium') || lower.includes('upgrade')) {
-    return { type: 'buy', query: '' }
   }
 
   // Default: AI Asset generieren
