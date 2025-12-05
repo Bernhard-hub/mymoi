@@ -309,11 +309,25 @@ Viel Spaß mit MOI! 🚀`)
       const chatId = callbackQuery.message.chat.id
       const data = callbackQuery.data
 
-      // Payment Buttons
+      // Telegram Stars Payment Buttons
+      if (data.startsWith('stars_')) {
+        const packageId = data.replace('stars_', '')
+        const { sendStarsInvoice } = await import('@/lib/payment')
+        await sendStarsInvoice(chatId, packageId)
+      }
+
+      // Legacy Payment Buttons
       if (data.startsWith('buy_')) {
         const packageId = data.replace('buy_', '')
         await sendInvoice(chatId, packageId)
       }
+
+      // Answer callback to remove loading state
+      await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: callbackQuery.id })
+      })
 
       return NextResponse.json({ ok: true })
     }

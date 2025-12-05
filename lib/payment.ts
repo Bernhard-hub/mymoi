@@ -1,53 +1,61 @@
-// Telegram Payment mit Stripe
-// Telegram hat eingebaute Payments - einfach über sendInvoice!
+// ============================================
+// TELEGRAM STARS PAYMENT - One-Click im Chat!
+// ============================================
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
-const STRIPE_PROVIDER_TOKEN = process.env.STRIPE_PROVIDER_TOKEN! // Telegram Stripe Provider Token
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
 
-// Credit Pakete
+// Credit Pakete mit Telegram Stars
+// 1 Star ≈ 0.02€ (User zahlt ~0.02€ pro Star)
+// Preise in Stars (nicht Cents!)
 export const CREDIT_PACKAGES = [
-  { id: 'credits_10', credits: 10, price: 199, label: '10 Credits', description: '10 AI-Assets erstellen' },
-  { id: 'credits_50', credits: 50, price: 799, label: '50 Credits', description: '50 AI-Assets erstellen + 10% Bonus' },
-  { id: 'credits_100', credits: 100, price: 1499, label: '100 Credits', description: '100 AI-Assets erstellen + 20% Bonus' },
-  { id: 'unlimited', credits: 9999, price: 2999, label: 'Unlimited (30 Tage)', description: 'Unbegrenzte AI-Assets für 30 Tage' }
+  { id: 'credits_10', credits: 10, stars: 100, euroPrice: '~1,99€', label: '⭐ 10 Credits', description: '10 AI-Assets erstellen' },
+  { id: 'credits_50', credits: 50, stars: 400, euroPrice: '~7,99€', label: '⭐ 50 Credits', description: '50 AI-Assets + 10% Bonus' },
+  { id: 'credits_100', credits: 100, stars: 750, euroPrice: '~14,99€', label: '⭐ 100 Credits', description: '100 AI-Assets + 20% Bonus' },
+  { id: 'unlimited', credits: 9999, stars: 1500, euroPrice: '~29,99€', label: '🚀 UNLIMITED', description: 'Unbegrenzte AI-Assets für 30 Tage' }
 ]
 
-// Invoice senden (Telegram native payment)
-export async function sendInvoice(chatId: number, packageId: string) {
+// Stripe Checkout URLs (Fallback für größere Beträge)
+const STRIPE_PACKAGES = [
+  { id: 'credits_10', credits: 10, price: 199, label: '10 Credits - 1,99€' },
+  { id: 'credits_50', credits: 50, price: 799, label: '50 Credits - 7,99€' },
+  { id: 'credits_100', credits: 100, price: 1499, label: '100 Credits - 14,99€' },
+  { id: 'unlimited', credits: 9999, price: 2999, label: 'Unlimited - 29,99€' }
+]
+
+// ============================================
+// TELEGRAM STARS INVOICE (One-Click!)
+// ============================================
+export async function sendStarsInvoice(chatId: number, packageId: string) {
   const pkg = CREDIT_PACKAGES.find(p => p.id === packageId)
   if (!pkg) throw new Error('Package not found')
 
   const payload = JSON.stringify({ package_id: packageId, credits: pkg.credits })
 
+  // Telegram Stars Invoice - provider_token muss LEER sein für Stars!
   const response = await fetch(`${TELEGRAM_API}/sendInvoice`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      title: pkg.label,
+      title: `MOI ${pkg.label}`,
       description: pkg.description,
       payload: payload,
-      provider_token: STRIPE_PROVIDER_TOKEN,
-      currency: 'EUR',
-      prices: [{ label: pkg.label, amount: pkg.price }], // amount in cents
-      start_parameter: packageId,
-      // Photo optional
-      photo_url: 'https://i.imgur.com/MOI_Credits.png',
-      photo_width: 512,
-      photo_height: 512,
-      need_name: false,
-      need_email: false,
-      need_phone_number: false,
-      need_shipping_address: false,
-      is_flexible: false
+      provider_token: '', // LEER für Telegram Stars!
+      currency: 'XTR', // XTR = Telegram Stars
+      prices: [{ label: pkg.label, amount: pkg.stars }],
+      start_parameter: packageId
     })
   })
 
-  return response.json()
+  const result = await response.json()
+  console.log('Stars invoice result:', JSON.stringify(result))
+  return result
 }
 
-// Pre-Checkout Query beantworten (MUSS innerhalb 10 Sekunden erfolgen!)
+// ============================================
+// PRE-CHECKOUT QUERY BEANTWORTEN
+// ============================================
 export async function answerPreCheckoutQuery(preCheckoutQueryId: string, ok: boolean, errorMessage?: string) {
   const response = await fetch(`${TELEGRAM_API}/answerPreCheckoutQuery`, {
     method: 'POST',
@@ -62,17 +70,21 @@ export async function answerPreCheckoutQuery(preCheckoutQueryId: string, ok: boo
   return response.json()
 }
 
-// Payment Menu senden mit Checkout Links
+// ============================================
+// PAYMENT MENU - Stars + Stripe Option
+// ============================================
 export async function sendPaymentMenu(chatId: number, userId?: number) {
-  const baseUrl = process.env.VERCEL_URL || 'mymoi-bot.vercel.app'
+  const baseUrl = 'mymoi-bot.vercel.app'
   const userParam = userId ? `&user=${userId}` : `&user=${chatId}`
 
+  // Inline Keyboard mit Stars-Buttons (callback_data) + Stripe Link
   const keyboard = {
     inline_keyboard: [
-      [{ text: '💎 10 Credits - 1,99€', url: `https://${baseUrl}/api/checkout?package=credits_10${userParam}` }],
-      [{ text: '💎 50 Credits - 7,99€', url: `https://${baseUrl}/api/checkout?package=credits_50${userParam}` }],
-      [{ text: '💎 100 Credits - 14,99€', url: `https://${baseUrl}/api/checkout?package=credits_100${userParam}` }],
-      [{ text: '🚀 UNLIMITED - 29,99€', url: `https://${baseUrl}/api/checkout?package=unlimited${userParam}` }]
+      [{ text: '⭐ 10 Credits (100 Stars)', callback_data: 'stars_credits_10' }],
+      [{ text: '⭐ 50 Credits (400 Stars)', callback_data: 'stars_credits_50' }],
+      [{ text: '⭐ 100 Credits (750 Stars)', callback_data: 'stars_credits_100' }],
+      [{ text: '🚀 UNLIMITED (1500 Stars)', callback_data: 'stars_unlimited' }],
+      [{ text: '💳 Mit Kreditkarte zahlen', url: `https://${baseUrl}/api/checkout?package=credits_10${userParam}` }]
     ]
   }
 
@@ -81,26 +93,21 @@ export async function sendPaymentMenu(chatId: number, userId?: number) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       chat_id: chatId,
-      text: `💳 *Credits kaufen*
+      text: `💎 *Credits kaufen*
 
-Wähle dein Paket:
+⭐ *Telegram Stars* (One-Click!)
+_Direkt hier bezahlen - kein Redirect!_
 
-💎 *10 Credits* - 1,99€
-_Perfekt zum Ausprobieren_
+⭐ 10 Credits = 100 Stars (~1,99€)
+⭐ 50 Credits = 400 Stars (~7,99€)
+⭐ 100 Credits = 750 Stars (~14,99€)
+🚀 UNLIMITED = 1500 Stars (~29,99€)
 
-💎 *50 Credits* - 7,99€
-_10% mehr Credits als Bonus!_
-
-💎 *100 Credits* - 14,99€
-_20% mehr Credits als Bonus!_
-
-🚀 *UNLIMITED* - 29,99€/Monat
-_Unbegrenzte AI-Power für 30 Tage!_
-
- Apple Pay |  Google Pay | 💳 Kreditkarte
+━━━━━━━━━━━━━━━
+✅ One-Click Payment
+✅ Apple Pay / Google Pay
 ✅ Sofortige Gutschrift
-✅ Keine Abo-Falle
-🔒 SSL-verschlüsselt`,
+✅ Kein Abo - Keine Falle`,
       parse_mode: 'Markdown',
       reply_markup: keyboard
     })
@@ -109,7 +116,9 @@ _Unbegrenzte AI-Power für 30 Tage!_
   return response.json()
 }
 
-// Credits nach erfolgreicher Zahlung gutschreiben
+// ============================================
+// ERFOLGREICHE ZAHLUNG VERARBEITEN
+// ============================================
 export async function processSuccessfulPayment(telegramId: number, payload: string): Promise<number> {
   try {
     const data = JSON.parse(payload)
@@ -118,3 +127,10 @@ export async function processSuccessfulPayment(telegramId: number, payload: stri
     return 0
   }
 }
+
+// Legacy export für Kompatibilität
+export async function sendInvoice(chatId: number, packageId: string) {
+  return sendStarsInvoice(chatId, packageId)
+}
+
+export { STRIPE_PACKAGES }
