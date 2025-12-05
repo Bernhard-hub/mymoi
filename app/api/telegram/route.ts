@@ -442,6 +442,51 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
         return NextResponse.json({ ok: true })
       }
 
+      // /email Command - fragt nach E-Mail-Adresse
+      if (message.text === '/email') {
+        await sendMessage(chatId, `📧 *E-Mail senden*
+
+Schreib mir die E-Mail so:
+_"test@beispiel.de Betreff: Hallo"_
+
+Oder ausführlicher:
+_"Schick an max@firma.de Betreff: Meeting - Wir treffen uns morgen um 10 Uhr"_`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /termin Command
+      if (message.text === '/termin') {
+        await sendMessage(chatId, `📅 *Termin erstellen*
+
+Schreib mir z.B.:
+_"Termin morgen 14 Uhr Zahnarzt"_
+_"Meeting am Freitag 10:00 mit Team"_
+
+Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /pdf Command
+      if (message.text === '/pdf') {
+        await sendMessage(chatId, `📄 *PDF erstellen*
+
+Schreib mir was du brauchst:
+_"Angebot für Webdesign als PDF"_
+_"Rechnung über 500€ als PDF"_
+_"Businessplan für Café als PDF"_`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /wetter Command
+      if (message.text === '/wetter') {
+        await sendMessage(chatId, `🌤️ *Wetter abfragen*
+
+Schreib mir eine Stadt:
+_"Wetter Wien"_
+_"Wetter in Berlin"_`)
+        return NextResponse.json({ ok: true })
+      }
+
       if (message.text === '/history') {
         const { getConversationHistory } = await import('@/lib/supabase')
         const history = await getConversationHistory(userId, 10)
