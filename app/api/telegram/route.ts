@@ -151,18 +151,17 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
   }
 
   // E-MAIL SENDEN - Direkt versenden wenn E-Mail-Adresse erkannt wird
+  // SEHR WICHTIG: Wenn eine E-Mail-Adresse im Text ist, ist es fast IMMER ein E-Mail Intent!
   const emailRegex = /[\w.-]+@[\w.-]+\.\w+/
   const emailMatch = text.match(emailRegex)
   if (emailMatch) {
-    // E-Mail-Adresse gefunden - prüfe ob es ein E-Mail Intent ist
-    const isEmailIntent = lower.includes('mail') ||
-                          lower.includes('schick') ||
-                          lower.includes('send') ||
-                          lower.includes('betreff') ||
-                          lower.includes('subject') ||
-                          lower.includes('an ') ||
-                          lower.startsWith(emailMatch[0].toLowerCase()) // Wenn Text mit E-Mail beginnt
-    if (isEmailIntent) {
+    // E-Mail-Adresse gefunden - das ist AUTOMATISCH ein E-Mail Intent
+    // Außer es ist explizit was anderes (z.B. "Kontakt speichern mit email@test.de")
+    const notEmailIntent = lower.includes('speicher') && lower.includes('kontakt') ||
+                           lower.includes('save') && lower.includes('contact')
+
+    if (!notEmailIntent) {
+      // E-Mail Adresse = E-Mail senden!
       return { type: 'email', query: text }
     }
   }
@@ -890,12 +889,16 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
           ]
         }
 
-        await sendMessage(chatId, `📲 *Klick auf einen Button um den Termin einzutragen:*
+        await sendMessage(chatId, `📲 *So trägst du den Termin ein:*
 
-⚠️ *Wichtig:* Der Link öffnet deinen Kalender im Browser.
-Dort musst du noch auf "Speichern" klicken!
+🔹 *Android/Desktop:*
+Klick auf einen Button unten → Browser öffnet → *"Speichern" klicken*
 
-_iPhone: Die .ics Datei oben antippen → "Zum Kalender hinzufügen"_`, {
+🔹 *iPhone/iPad:*
+Tippe auf die *.ics Datei* oben → "Ereignis hinzufügen" → *"Hinzufügen"*
+
+⚠️ Der Termin wird NICHT automatisch eingetragen!
+Du musst im geöffneten Kalender noch bestätigen.`, {
           disable_web_page_preview: true,
           reply_markup: calendarKeyboard
         })
