@@ -11,7 +11,7 @@ export async function GET() {
 
   if (key && key.startsWith('sk_')) {
     try {
-      const stripe = new Stripe(key, { apiVersion: '2025-11-17.clover' })
+      const stripe = new Stripe(key)
 
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],

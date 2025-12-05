@@ -13,7 +13,7 @@ function getStripe(): Stripe {
     if (!key || key === 'YOUR_STRIPE_SECRET_KEY') {
       throw new Error('STRIPE_SECRET_KEY nicht konfiguriert')
     }
-    stripeClient = new Stripe(key, { apiVersion: '2025-11-17.clover' })
+    stripeClient = new Stripe(key)
   }
   return stripeClient
 }
