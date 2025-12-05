@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node:*)",
-      "Bash(npx supabase db execute:*)"
+      "Bash(npx supabase db execute:*)",
+      "Bash(PGPASSWORD=\"9La7pNpK33z2ULRA\" psql:*)"
     ],
     "deny": [],
     "ask": []
