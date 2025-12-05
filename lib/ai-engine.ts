@@ -246,8 +246,20 @@ Keywords: "Instagram", "TikTok", "LinkedIn", "Twitter", "Post", "Caption", "Hash
 → Plattform-optimierter Post mit Hashtags und Emoji-Strategie
 
 🌐 WEBSITE (type: "website")
-Keywords: "Website", "Landing Page", "Homepage", "Webseite"
-→ Vollständiger HTML/CSS Code für moderne Landing Page
+Keywords: "Website", "Landing Page", "Homepage", "Webseite", "Homepage-Beitrag", "Blog", "Artikel"
+→ Vollständiger HTML/CSS Code für moderne Landing Page oder Blog-Artikel
+→ WICHTIG: Nutze echte Unsplash-Bilder mit diesem Format:
+  <img src="https://source.unsplash.com/800x400/?keyword1,keyword2" alt="Beschreibung">
+  Beispiele:
+  - https://source.unsplash.com/800x400/?recycling,environment (für Umwelt)
+  - https://source.unsplash.com/800x400/?business,office (für Business)
+  - https://source.unsplash.com/800x400/?technology,modern (für Tech)
+→ Füge am Ende einen HTML-Kommentar mit 3 DALL-E Prompts hinzu:
+  <!-- DALL-E PROMPTS FÜR CUSTOM BILDER:
+  1. [Detaillierter Prompt für Hero-Bild]
+  2. [Detaillierter Prompt für Feature-Bild]
+  3. [Detaillierter Prompt für CTA-Bild]
+  -->
 
 💻 CODE (type: "code")
 Keywords: "Code", "Programmieren", "Script", "Funktion", "App", "API"

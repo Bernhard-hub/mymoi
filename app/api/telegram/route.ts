@@ -1122,6 +1122,13 @@ Deine kostenlosen Assets sind weg.
         const fileName = `${asset.title?.replace(/[^a-zA-Z0-9äöüÄÖÜß]/g, '_') || 'Website'}.html`
         const htmlBuffer = Buffer.from(htmlContent, 'utf-8')
 
+        // DALL-E Prompts extrahieren falls vorhanden
+        const dalleMatch = htmlContent.match(/<!--\s*DALL-E PROMPTS[^>]*:([\s\S]*?)-->/i)
+        let dallePrompts = ''
+        if (dalleMatch) {
+          dallePrompts = dalleMatch[1].trim()
+        }
+
         // HTML auf Supabase hochladen für Preview-Link
         const uploadFileName = `website_${Date.now()}_${fileName}`
         const { error: uploadError } = await supabase.storage
@@ -1140,6 +1147,11 @@ Deine kostenlosen Assets sind weg.
         // Preview-Link senden wenn Upload erfolgreich
         if (previewUrl) {
           await sendMessage(chatId, `🔗 *Live-Preview:*\n[Website öffnen](${previewUrl})`, { disable_web_page_preview: false })
+        }
+
+        // DALL-E Prompts separat senden wenn vorhanden
+        if (dallePrompts) {
+          await sendMessage(chatId, `🎨 *Custom Bilder mit DALL-E/Midjourney:*\n\n${dallePrompts}\n\n_Kopiere diese Prompts in DALL-E oder Midjourney für einzigartige Bilder!_`)
         }
       } catch (e) {
         console.error('HTML creation error:', e)

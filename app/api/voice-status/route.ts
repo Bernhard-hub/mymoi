@@ -122,16 +122,30 @@ export async function POST(request: NextRequest) {
       console.log(`📧 E-Mail-Adresse erkannt: ${emailAddress}`)
 
       // E-Mail senden
+      // DALL-E Prompts extrahieren falls Website
+      let dallePrompts = ''
+      if (asset.type === 'website') {
+        const dalleMatch = asset.content.match(/<!--\s*DALL-E PROMPTS[^>]*:([\s\S]*?)-->/i)
+        if (dalleMatch) {
+          dallePrompts = dalleMatch[1].trim()
+        }
+      }
+
       const emailBody = asset.type === 'presentation'
         ? `Hier ist deine Präsentation "${asset.title}"!\n\nDownload: ${fileUrl || 'Datei wird verarbeitet...'}`
         : asset.type === 'website'
-        ? `Hier ist deine Website "${asset.title}"!\n\nLink: ${fileUrl || 'Wird verarbeitet...'}`
+        ? `Hier ist deine Website "${asset.title}"!\n\nLink: ${fileUrl || 'Wird verarbeitet...'}\n\n${dallePrompts ? `--- DALL-E/Midjourney Prompts für Custom Bilder ---\n${dallePrompts}` : ''}`
         : asset.content
 
       const emailHtml = asset.type === 'presentation'
         ? `<p>Hier ist deine Präsentation "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">📥 Download PPTX</a></p>`
         : asset.type === 'website'
-        ? `<p>Hier ist deine Website "<strong>${asset.title}</strong>"!</p><p><a href="${fileUrl}">🌐 Website öffnen</a></p>`
+        ? `<p>Hier ist deine Website "<strong>${asset.title}</strong>"!</p>
+           <p><a href="${fileUrl}" style="display:inline-block;padding:12px 24px;background:#667eea;color:white;text-decoration:none;border-radius:8px;">🌐 Website öffnen</a></p>
+           ${dallePrompts ? `<hr style="margin:20px 0;border:none;border-top:1px solid #eee;">
+           <h3>🎨 Custom Bilder mit DALL-E/Midjourney:</h3>
+           <pre style="background:#f5f5f5;padding:15px;border-radius:8px;white-space:pre-wrap;">${dallePrompts}</pre>
+           <p><em>Kopiere diese Prompts für einzigartige Bilder!</em></p>` : ''}`
         : undefined
 
       const emailResult = await sendEmail({
