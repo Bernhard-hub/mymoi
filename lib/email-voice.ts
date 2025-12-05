@@ -330,6 +330,17 @@ export async function refreshAccessToken(config: UserEmailConfig): Promise<strin
 // UNIFIED EMAIL INTERFACE
 // ============================================
 
+// Prüfen ob User E-Mail verbunden hat
+export async function isEmailConnected(userId: number): Promise<boolean> {
+  const config = await getUserEmailConfig(userId)
+  return !!config
+}
+
+// Verbindungslink generieren
+export function getConnectLink(phone: string): string {
+  return `https://mymoi-bot.vercel.app/api/connect?phone=${encodeURIComponent(phone)}`
+}
+
 export async function fetchUserEmails(userId: number, limit: number = 5): Promise<EmailMessage[]> {
   const config = await getUserEmailConfig(userId)
 

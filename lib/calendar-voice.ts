@@ -330,27 +330,64 @@ export interface ParsedCalendarRequest {
 }
 
 export async function parseCalendarRequest(text: string): Promise<ParsedCalendarRequest> {
+  // Heutiges Datum berechnen
+  const now = new Date()
+  const today = now.toISOString().split('T')[0]
+  const todayWeekday = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'][now.getDay()]
+
+  // Morgen berechnen
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+  const tomorrowDate = tomorrow.toISOString().split('T')[0]
+
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 512,
-    system: `Extrahiere Kalender-Informationen aus dem Text.
-Heutiges Datum: ${new Date().toISOString().split('T')[0]}
+    system: `Du extrahierst Kalender-Informationen aus gesprochenem Text.
 
-Antworte NUR mit JSON:
+WICHTIG - Heutige Infos:
+- Heute: ${today} (${todayWeekday})
+- Morgen: ${tomorrowDate}
+- Aktuelle Uhrzeit: ${now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+
+Antworte NUR mit diesem JSON-Format:
 {
   "action": "list|create|cancel|reschedule|unknown",
-  "title": "Titel des Termins",
-  "date": "2024-12-10",
-  "time": "14:00",
+  "title": "EXAKTER Titel wie vom User gesagt",
+  "date": "YYYY-MM-DD",
+  "time": "HH:MM",
   "duration": 60,
-  "location": "Ort",
-  "attendees": ["email1@...", "email2@..."]
+  "location": "Ort falls genannt"
 }
 
-Beispiele:
-- "Was habe ich morgen?" → action: "list", date: morgen
-- "Termin mit Max um 15 Uhr Meeting" → action: "create", title: "Meeting mit Max", time: "15:00"
-- "Streich den Zahnarzt" → action: "cancel", title: "Zahnarzt"`,
+REGELN FÜR TITEL:
+- Nimm den Titel GENAU wie der User ihn sagt
+- "Termin Zahnarzt" → title: "Zahnarzt"
+- "Meeting mit Müller" → title: "Meeting mit Müller"
+- "Anruf bei Mama" → title: "Anruf bei Mama"
+- NICHT interpretieren oder umformulieren!
+
+REGELN FÜR DATUM:
+- "morgen" → ${tomorrowDate}
+- "heute" → ${today}
+- "übermorgen" → +2 Tage von ${today}
+- "nächsten Montag" → kommender Montag
+- "am 15." → nächster 15. des Monats
+
+REGELN FÜR ZEIT:
+- "um 3" oder "um drei" → "15:00" (nachmittags annehmen)
+- "um 9" → "09:00" (morgens)
+- "mittags" → "12:00"
+- "abends" → "18:00"
+
+BEISPIELE:
+User: "Termin Zahnarzt morgen um 10"
+→ {"action":"create","title":"Zahnarzt","date":"${tomorrowDate}","time":"10:00"}
+
+User: "Meeting mit Herrn Schmidt am Freitag 14 Uhr"
+→ {"action":"create","title":"Meeting mit Herrn Schmidt","date":"[Freitag Datum]","time":"14:00"}
+
+User: "Was habe ich morgen?"
+→ {"action":"list","date":"${tomorrowDate}"}`,
     messages: [{ role: 'user', content: text }]
   })
 

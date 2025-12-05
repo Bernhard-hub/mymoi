@@ -6,6 +6,24 @@ import { generateAsset } from '@/lib/ai-engine'
 import { sendSMS } from '@/lib/twilio-deliver'
 import { sendEmail, extractEmailFromText } from '@/lib/email'
 import { processWithBrain, enrichWithKnowledge } from '@/lib/moi-brain'
+import {
+  isEmailConnected,
+  getConnectLink,
+  fetchUserEmails,
+  formatEmailsForVoice,
+  formatSingleEmailForVoice,
+  getEmailFromSession,
+  setEmailSession,
+  generateEmailReply,
+  sendEmailReply
+} from '@/lib/email-voice'
+import {
+  isCalendarRequest,
+  parseCalendarRequest,
+  fetchUserCalendarEvents,
+  formatCalendarForVoice,
+  createLocalCalendarEvent
+} from '@/lib/calendar-voice'
 
 const VoiceResponse = twilio.twiml.VoiceResponse
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
@@ -103,26 +121,115 @@ export async function POST(request: NextRequest) {
     const enrichedTranscript = await enrichWithKnowledge(cleanedTranscript, userId)
 
     // ============================================
-    // 3. ERKENNEN WAS DER USER WILL
+    // 3. SPEZIELLE ANFRAGEN ERKENNEN
     // ============================================
-    const intent = await detectIntent(cleanedTranscript)
 
     let voiceResponse = ''
     let needsFollowUp = true
 
     // ============================================
+    // E-MAILS VORLESEN (User fragt nach E-Mails)
+    // ============================================
+    const emailKeywords = ['mail', 'e-mail', 'email', 'posteingang', 'inbox', 'nachrichten']
+    const wantsEmails = emailKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))
+
+    if (wantsEmails && !cleanedTranscript.toLowerCase().includes('schreib') && !cleanedTranscript.toLowerCase().includes('send')) {
+      // Prüfen ob E-Mail verbunden
+      const connected = await isEmailConnected(userId)
+
+      if (!connected) {
+        // AUTOMATISCH Link senden!
+        const connectLink = getConnectLink(from)
+        await sendSMS(from,
+          `📧 Um E-Mails per Telefon zu hören, verbinde deinen Account:\n\n${connectLink}\n\nEinmal klicken, dann funktioniert's!`
+        )
+
+        voiceResponse = 'Ich habe dir einen Link per SMS geschickt um deinen E-Mail Account zu verbinden. Klick einmal drauf, dann kannst du deine E-Mails per Telefon hören und beantworten!'
+        needsFollowUp = true
+      } else {
+        // E-Mails laden und vorlesen
+        const emails = await fetchUserEmails(userId, 5)
+        setEmailSession(from, emails)
+
+        voiceResponse = formatEmailsForVoice(emails)
+        needsFollowUp = true
+      }
+    }
+
+    // ============================================
+    // KALENDER ANFRAGEN
+    // ============================================
+    else if (isCalendarRequest(cleanedTranscript)) {
+      const calendarRequest = await parseCalendarRequest(cleanedTranscript)
+
+      if (calendarRequest.action === 'create' && calendarRequest.title) {
+        // Termin erstellen
+        let startDate = calendarRequest.date || new Date()
+        if (calendarRequest.time) {
+          const [hours, minutes] = calendarRequest.time.split(':').map(Number)
+          startDate.setHours(hours, minutes, 0, 0)
+        }
+
+        const duration = calendarRequest.duration || 60
+        const endDate = new Date(startDate.getTime() + duration * 60 * 1000)
+
+        const event = await createLocalCalendarEvent(userId, {
+          title: calendarRequest.title,
+          start: startDate,
+          end: endDate,
+          location: calendarRequest.location,
+          isAllDay: !calendarRequest.time
+        })
+
+        if (event) {
+          const dayName = startDate.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })
+          const timeStr = calendarRequest.time || 'ganztägig'
+
+          voiceResponse = `Termin erstellt: ${calendarRequest.title}, am ${dayName} um ${timeStr}.`
+
+          // SMS zur Bestätigung
+          await sendSMS(from,
+            `✅ Termin erstellt:\n\n` +
+            `📌 ${calendarRequest.title}\n` +
+            `📅 ${dayName}\n` +
+            `⏰ ${timeStr}` +
+            (calendarRequest.location ? `\n📍 ${calendarRequest.location}` : '')
+          )
+        } else {
+          voiceResponse = 'Der Termin konnte nicht erstellt werden. Versuche es nochmal.'
+        }
+      } else {
+        // Termine auflisten
+        const events = await fetchUserCalendarEvents(userId, 7)
+        voiceResponse = formatCalendarForVoice(events, 7)
+
+        if (events.length > 0) {
+          await sendSMS(from,
+            `📅 Deine Termine:\n\n` +
+            events.slice(0, 5).map(e => {
+              const day = e.start.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' })
+              const time = e.isAllDay ? '(ganztags)' : e.start.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+              return `• ${day} ${time}: ${e.title}`
+            }).join('\n')
+          )
+        }
+      }
+      needsFollowUp = true
+    }
+
+    // ============================================
     // FRAGEN BEANTWORTEN
     // ============================================
-    if (intent.type === 'question') {
+    else if ((await detectIntent(cleanedTranscript)).type === 'question') {
       const answer = await answerQuestion(cleanedTranscript, userId)
       voiceResponse = answer
       needsFollowUp = true
     }
 
     // ============================================
-    // E-MAIL SENDEN
+    // E-MAIL SCHREIBEN/SENDEN
     // ============================================
-    else if (intent.type === 'email') {
+    else if ((await detectIntent(cleanedTranscript)).type === 'email') {
       const emailAddress = extractEmailFromText(cleanedTranscript)
 
       if (!emailAddress) {
@@ -152,7 +259,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // AUFGABE / AKTION AUSFÜHREN
     // ============================================
-    else if (intent.type === 'task') {
+    else if ((await detectIntent(cleanedTranscript)).type === 'task') {
       const asset = await generateAsset(enrichedTranscript)
 
       // Je nach Asset-Typ
