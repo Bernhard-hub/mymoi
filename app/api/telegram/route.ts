@@ -76,8 +76,8 @@ async function sendChatAction(chatId: number, action: 'typing' | 'upload_documen
   })
 }
 
-// Voice in Text umwandeln (Groq Whisper)
-async function transcribeVoice(fileId: string): Promise<string> {
+// Voice/Video in Text umwandeln (Groq Whisper)
+async function transcribeAudio(fileId: string, fileType: 'voice' | 'video' = 'voice'): Promise<string> {
   const fileRes = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`)
   const fileData = await fileRes.json()
   const filePath = fileData.result.file_path
@@ -86,8 +86,11 @@ async function transcribeVoice(fileId: string): Promise<string> {
   const audioRes = await fetch(fileUrl)
   const audioBuffer = await audioRes.arrayBuffer()
 
+  // Dateiname basierend auf Typ
+  const fileName = fileType === 'video' ? 'video.mp4' : 'audio.ogg'
+
   const formData = new FormData()
-  formData.append('file', new Blob([audioBuffer]), 'audio.ogg')
+  formData.append('file', new Blob([audioBuffer]), fileName)
   formData.append('model', 'whisper-large-v3')
 
   const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -98,6 +101,11 @@ async function transcribeVoice(fileId: string): Promise<string> {
 
   const result = await whisperRes.json()
   return result.text || ''
+}
+
+// Alias für Rückwärtskompatibilität
+async function transcribeVoice(fileId: string): Promise<string> {
+  return transcribeAudio(fileId, 'voice')
 }
 
 // ============================================
@@ -319,7 +327,7 @@ Viel Spaß mit MOI! 🚀`)
     // User anlegen/holen
     const user = await getOrCreateUser(userId, userName)
 
-    // Text oder Voice?
+    // Text, Voice, Video oder Video Note?
     let userText = ''
 
     if (message.voice) {
@@ -331,6 +339,64 @@ Viel Spaß mit MOI! 🚀`)
         return NextResponse.json({ ok: true })
       }
       await sendMessage(chatId, `📝 _"${userText}"_`)
+    } else if (message.video || message.video_note) {
+      // Video oder Kreis-Video empfangen - Audio transkribieren
+      await sendChatAction(chatId, 'typing')
+      const isCircle = !!message.video_note
+      const videoData = message.video || message.video_note
+      const fileId = videoData.file_id
+
+      await sendMessage(chatId, `🎬 *${isCircle ? 'Kreis-Video' : 'Video'} empfangen!*
+
+📊 Dauer: ${videoData.duration || '?'} Sekunden
+${videoData.file_size ? `💾 ${Math.round(videoData.file_size / 1024)} KB` : ''}
+
+🎤 *Extrahiere Audio...*`)
+
+      try {
+        // Audio aus Video transkribieren
+        const transcript = await transcribeAudio(fileId, 'video')
+
+        if (transcript && transcript.trim()) {
+          await sendMessage(chatId, `📝 *Transkript:*\n\n_"${transcript}"_`)
+
+          // Caption falls vorhanden
+          const caption = message.caption || ''
+
+          // In History speichern
+          await addToHistory(userId, 'user', `[Video-Transkript]: ${transcript}`)
+
+          // Jetzt kann der User mit dem Transkript arbeiten
+          userText = caption || transcript
+
+        } else {
+          await sendMessage(chatId, `🎬 *Video empfangen*
+
+_Kein Audio erkannt oder Video ohne Ton._
+
+${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich mit dem Video machen soll!'}`)
+
+          if (message.caption) {
+            userText = message.caption
+          } else {
+            await addToHistory(userId, 'user', `[Video ohne Audio gesendet]`)
+            return NextResponse.json({ ok: true })
+          }
+        }
+      } catch (error) {
+        console.error('Video transcription error:', error)
+        await sendMessage(chatId, `🎬 *Video empfangen*
+
+⚠️ _Konnte Audio nicht extrahieren._
+
+${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich mit dem Video machen soll!'}`)
+
+        if (message.caption) {
+          userText = message.caption
+        } else {
+          return NextResponse.json({ ok: true })
+        }
+      }
     } else if (message.text) {
       // COMMANDS
       if (message.text === '/start') {
