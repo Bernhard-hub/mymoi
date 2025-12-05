@@ -104,31 +104,65 @@ SUMMARY:${escapeICS(event.title)}
 
 // Hilfsfunktion um Kalender-JSON von AI zu parsen
 export function parseCalendarFromAI(content: string): CalendarEvent[] {
+  // Bereinige den Content von Markdown Code-Blocks
+  let cleanContent = content
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim()
+
   try {
-    // Versuche JSON zu parsen
-    const jsonMatch = content.match(/\[[\s\S]*\]/)
+    // Versuche JSON Array zu finden
+    const jsonMatch = cleanContent.match(/\[[\s\S]*?\]/)
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0])
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed.map(e => ({
           title: e.title || e.name || 'Event',
-          description: e.description,
+          description: e.description || '',
           date: e.date || new Date().toISOString().split('T')[0],
-          time: e.time,
-          duration: e.duration,
-          location: e.location,
-          notes: e.notes
+          time: e.time || '10:00',
+          duration: e.duration || '1h',
+          location: e.location || '',
+          notes: e.notes || ''
         }))
       }
     }
+
+    // Versuche einzelnes JSON Objekt
+    const objMatch = cleanContent.match(/\{[\s\S]*?\}/)
+    if (objMatch) {
+      const parsed = JSON.parse(objMatch[0])
+      return [{
+        title: parsed.title || parsed.name || 'Event',
+        description: parsed.description || '',
+        date: parsed.date || new Date().toISOString().split('T')[0],
+        time: parsed.time || '10:00',
+        duration: parsed.duration || '1h',
+        location: parsed.location || '',
+        notes: parsed.notes || ''
+      }]
+    }
   } catch (e) {
-    console.error('Calendar parse error:', e)
+    console.error('Calendar parse error:', e, 'Content:', cleanContent.substring(0, 200))
   }
 
-  // Fallback: Einzelnes Event aus Text
+  // Fallback: Extrahiere Infos aus Text
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  // Versuche Zeit zu extrahieren (z.B. "10 Uhr", "14:30")
+  const timeMatch = content.match(/(\d{1,2})(?::(\d{2}))?\s*(?:uhr|Uhr|h)?/i)
+  const extractedTime = timeMatch ? `${timeMatch[1].padStart(2, '0')}:${timeMatch[2] || '00'}` : '10:00'
+
+  // Versuche Titel zu extrahieren
+  const titleMatch = content.match(/(?:meeting|besprechung|termin|event)[\s:]*(.+?)(?:\s+(?:um|morgen|heute|am)|\s*$)/i)
+  const extractedTitle = titleMatch ? titleMatch[1].trim() : content.substring(0, 50)
+
   return [{
-    title: 'Event',
+    title: extractedTitle || 'Event',
     description: content,
-    date: new Date().toISOString().split('T')[0]
+    date: tomorrow.toISOString().split('T')[0],
+    time: extractedTime,
+    duration: '1h'
   }]
 }

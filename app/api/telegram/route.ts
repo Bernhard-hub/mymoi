@@ -113,10 +113,12 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
     return { type: 'pdf', query: query || 'Dokument' }
   }
 
-  // ICS/Kalender Export
+  // ICS/Kalender Export - Erweiterte Erkennung
   if (lower.includes('kalender') || lower.includes('ics') || lower.includes('termin') ||
-      lower.includes('event') || lower.includes('in meinen kalender') || lower.includes('calendar')) {
-    const query = text.replace(/kalender|ics|termin|event|in meinen kalender|calendar/gi, '').trim()
+      lower.includes('trag ein') || lower.includes('trag es ein') || lower.includes('eintragen') ||
+      lower.includes('meeting') || lower.includes('besprechung') ||
+      lower.includes('in meinen kalender') || lower.includes('calendar')) {
+    const query = text.replace(/kalender|ics|termin|trag ein|trag es ein|eintragen|in meinen kalender|calendar/gi, '').trim()
     return { type: 'ics', query: query || 'Event' }
   }
 
@@ -604,11 +606,21 @@ _Twilio Integration in Entwicklung..._`)
       await sendMessage(chatId, '📅 *Erstelle Kalender-Event...*')
       await sendChatAction(chatId, 'upload_document')
 
-      // Generiere Kalender-Event mit AI
-      const context = await getContextForAI(userId)
-      const asset = await generateAsset(`Erstelle ein Kalender-Event für: ${intent.query}.
-Antworte im JSON-Format: [{"title": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "duration": "1h", "description": "...", "location": "..."}]
-${context}`)
+      // Generiere Kalender-Event mit AI - Sehr spezifischer Prompt
+      const today = new Date()
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const tomorrowStr = tomorrow.toISOString().split('T')[0]
+
+      const asset = await generateAsset(`Erstelle ein Kalender-Event. User sagt: "${intent.query}"
+
+WICHTIG: Antworte NUR mit diesem JSON-Format, nichts anderes:
+[{"title": "Event Titel", "date": "${tomorrowStr}", "time": "10:00", "duration": "1h", "description": "Beschreibung", "location": ""}]
+
+Falls "morgen" erwähnt wird, nutze: ${tomorrowStr}
+Falls "heute" erwähnt wird, nutze: ${today.toISOString().split('T')[0]}
+
+NUR DAS JSON AUSGEBEN!`)
 
       await addToHistory(userId, 'user', userText)
 

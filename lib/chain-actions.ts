@@ -230,25 +230,40 @@ export async function executeChain(
 // ============================================
 
 export function mightBeChain(text: string): boolean {
-  const chainIndicators = [
-    'und schick',
-    'und mail',
-    'und trag',
-    'und speicher',
-    'und erinner',
-    'dann schick',
-    'danach',
-    'außerdem',
-    'zusätzlich',
-    'per mail',
-    'per whatsapp',
-    'an mich',
-    'an ihn',
-    'an sie',
-    'in den kalender',
-    'ins crm'
-  ]
-
   const lower = text.toLowerCase()
-  return chainIndicators.some(indicator => lower.includes(indicator))
+
+  // E-Mail Adresse erkannt + Sende-Intent
+  const hasEmail = /@/.test(text) || lower.includes('mail') || lower.includes('e-mail')
+  const hasSendIntent = lower.includes('schick') || lower.includes('send') || lower.includes('mail')
+
+  // Kalender Intent
+  const hasCalendarIntent = lower.includes('kalender') || lower.includes('trag ein') || lower.includes('termin')
+
+  // Dokument + Aktion
+  const hasDocIntent = lower.includes('erstell') || lower.includes('angebot') || lower.includes('dokument')
+  const hasChainWord = lower.includes(' und ') || lower.includes('dann') || lower.includes('danach')
+
+  // Chain wenn: (Dokument + Senden) ODER (Dokument + Kalender) ODER (mehrere Aktionen)
+  if (hasDocIntent && hasSendIntent && hasEmail) return true
+  if (hasDocIntent && hasCalendarIntent) return true
+  if (hasChainWord && (hasSendIntent || hasCalendarIntent)) return true
+
+  return false
+}
+
+// E-Mail aus Text extrahieren (auch Spracheingabe wie "test at example punkt com")
+export function extractEmail(text: string): string | null {
+  // Standard E-Mail Regex
+  const emailRegex = /[\w.-]+@[\w.-]+\.\w+/i
+  const match = text.match(emailRegex)
+  if (match) return match[0]
+
+  // Spracheingabe: "test at example punkt com" oder "test at example dot com"
+  const spokenRegex = /(\w+)\s*(at|@|ät)\s*(\w+)\s*(punkt|dot|\.)\s*(\w+)/i
+  const spokenMatch = text.match(spokenRegex)
+  if (spokenMatch) {
+    return `${spokenMatch[1]}@${spokenMatch[3]}.${spokenMatch[5]}`
+  }
+
+  return null
 }
