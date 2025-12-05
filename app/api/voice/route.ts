@@ -43,12 +43,11 @@ export async function POST(request: NextRequest) {
     // Feste Production URL für Callbacks (Preview URLs funktionieren nicht mit Twilio)
     const baseUrl = 'https://mymoi-bot.vercel.app'
 
+    // KONVERSATION: Aufnahme → voice-done → voice-process (antwortet!)
     response.record({
       maxLength: 120,
-      timeout: 2, // 2 Sek Stille = fertig
+      timeout: 3, // 3 Sek Stille = fertig (natürlicher)
       playBeep: false,
-      recordingStatusCallback: `${baseUrl}/api/voice-status`,
-      recordingStatusCallbackEvent: ['completed'],
       action: `${baseUrl}/api/voice-done`,
     })
 
