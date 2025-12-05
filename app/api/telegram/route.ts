@@ -917,6 +917,25 @@ NUR DAS JSON AUSGEBEN!`)
         // Kalender-Links erstellen
         const calLinks = createCalendarLinks(events[0])
 
+        // ICS auf Supabase hochladen für direkten Download-Link
+        let icsDownloadUrl = ''
+        try {
+          const uploadFileName = `calendar_${Date.now()}_${fileName}`
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('assets')
+            .upload(uploadFileName, icsBuffer, {
+              contentType: 'text/calendar',
+              upsert: true
+            })
+
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('assets').getPublicUrl(uploadFileName)
+            icsDownloadUrl = urlData.publicUrl
+          }
+        } catch (uploadErr) {
+          console.log('ICS upload optional:', uploadErr)
+        }
+
         // ICS Datei senden
         await sendDocumentBuffer(chatId, icsBuffer, fileName, `📅 *${events[0]?.title || 'Event'}*
 
@@ -924,24 +943,24 @@ NUR DAS JSON AUSGEBEN!`)
 ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
 
         // Direkte Kalender-Links senden mit Inline-Buttons
+        // Apple/iPhone: webcal Link für direktes Hinzufügen
+        const webcalUrl = icsDownloadUrl ? icsDownloadUrl.replace('https://', 'webcal://') : ''
+
         const calendarKeyboard = {
           inline_keyboard: [
-            [{ text: '📱 Google Calendar öffnen', url: calLinks.google }],
-            [{ text: '📧 Outlook öffnen', url: calLinks.outlook }],
-            [{ text: '💼 Office 365 öffnen', url: calLinks.office365 }]
+            [{ text: '📱 Google Calendar', url: calLinks.google }],
+            [{ text: '📧 Outlook.com', url: calLinks.outlook }],
+            ...(icsDownloadUrl ? [[{ text: '🍎 iPhone/iPad (Safari öffnen)', url: icsDownloadUrl }]] : [])
           ]
         }
 
-        await sendMessage(chatId, `📲 *So trägst du den Termin ein:*
+        await sendMessage(chatId, `📲 *Termin eintragen:*
 
-🔹 *Android/Desktop:*
-Klick auf einen Button unten → Browser öffnet → *"Speichern" klicken*
+*Klicke auf deinen Kalender:*
+↓ Buttons unten ↓
 
-🔹 *iPhone/iPad:*
-Tippe auf die *.ics Datei* oben → "Ereignis hinzufügen" → *"Hinzufügen"*
-
-⚠️ Der Termin wird NICHT automatisch eingetragen!
-Du musst im geöffneten Kalender noch bestätigen.`, {
+*iPhone/iPad Tipp:*
+"iPhone/iPad" Button → Safari öffnet → Oben rechts "Öffnen mit" → Kalender → *Hinzufügen*`, {
           disable_web_page_preview: true,
           reply_markup: calendarKeyboard
         })

@@ -56,14 +56,16 @@ export function createICS(events: CalendarEvent[]): string {
   const now = new Date()
   const timestamp = now.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z'
 
-  let ics = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//MOI AI Assistant//MYMOI//DE
-CALSCALE:GREGORIAN
-METHOD:PUBLISH
-X-WR-CALNAME:MOI Events
-X-WR-TIMEZONE:Europe/Vienna
-`
+  // ICS Format - WICHTIG: Keine Leerzeichen am Zeilenanfang, CRLF Zeilenenden
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MOI AI Assistant//MYMOI//DE',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'X-WR-CALNAME:MOI Events',
+    'X-WR-TIMEZONE:Europe/Vienna'
+  ]
 
   for (let i = 0; i < events.length; i++) {
     const event = events[i]
@@ -77,29 +79,35 @@ X-WR-TIMEZONE:Europe/Vienna
       event.notes ? `Notizen: ${event.notes}` : ''
     ].filter(Boolean).join('\\n\\n')
 
-    ics += `BEGIN:VEVENT
-UID:${uid}
-DTSTAMP:${timestamp}
-DTSTART:${dtStart}
-DTEND:${dtEnd}
-SUMMARY:${escapeICS(event.title)}
-`
+    lines.push('BEGIN:VEVENT')
+    lines.push(`UID:${uid}`)
+    lines.push(`DTSTAMP:${timestamp}`)
+    lines.push(`DTSTART:${dtStart}`)
+    lines.push(`DTEND:${dtEnd}`)
+    lines.push(`SUMMARY:${escapeICS(event.title)}`)
 
     if (description) {
-      ics += `DESCRIPTION:${escapeICS(description)}\n`
+      lines.push(`DESCRIPTION:${escapeICS(description)}`)
     }
 
     if (event.location) {
-      ics += `LOCATION:${escapeICS(event.location)}\n`
+      lines.push(`LOCATION:${escapeICS(event.location)}`)
     }
 
-    ics += `END:VEVENT
-`
+    // WICHTIG: Alarm/Reminder hinzufügen - das triggert den "Hinzufügen" Dialog!
+    lines.push('BEGIN:VALARM')
+    lines.push('TRIGGER:-PT15M')
+    lines.push('ACTION:DISPLAY')
+    lines.push(`DESCRIPTION:${escapeICS(event.title)} in 15 Minuten`)
+    lines.push('END:VALARM')
+
+    lines.push('END:VEVENT')
   }
 
-  ics += `END:VCALENDAR`
+  lines.push('END:VCALENDAR')
 
-  return ics
+  // CRLF Zeilenenden für maximale Kompatibilität
+  return lines.join('\r\n')
 }
 
 // ============================================
