@@ -26,6 +26,17 @@ import {
   researchArticle,
   formatArticleForVoice
 } from '@/lib/research-access'
+import {
+  parseEmailCommand,
+  fetchUserEmails,
+  formatEmailsForVoice,
+  formatSingleEmailForVoice,
+  getEmailFromSession,
+  setEmailSession,
+  getEmailSession,
+  generateEmailReply,
+  sendEmailReply
+} from '@/lib/email-voice'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -109,7 +120,115 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // 2.6 RESEARCH - Wissenschaftliche Artikel suchen
+    // 2.6 EMAIL VOICE - E-Mails vorlesen & beantworten
+    // ============================================
+    const emailCommand = parseEmailCommand(cleanedTranscript)
+
+    if (emailCommand.action !== 'unknown') {
+      console.log(`📧 Email-Befehl erkannt: ${emailCommand.action}`)
+
+      // E-MAILS AUFLISTEN
+      if (emailCommand.action === 'list') {
+        const emails = await fetchUserEmails(numericUserId, 5)
+        setEmailSession(from, emails)
+
+        const voiceResponse = formatEmailsForVoice(emails)
+        await callWithVoiceResponse(from, formatVoiceResponse(voiceResponse, 500))
+
+        // SMS mit Übersicht
+        const smsText = emails.length > 0
+          ? `📧 ${emails.length} neue E-Mails:\n\n` +
+            emails.slice(0, 5).map((e, i) =>
+              `${i + 1}. ${e.fromName || e.from.split('@')[0]}: ${e.subject}`
+            ).join('\n')
+          : '📭 Keine ungelesenen E-Mails'
+
+        await sendSMS(from, smsText)
+
+        return NextResponse.json({ success: true, type: 'email_list', count: emails.length })
+      }
+
+      // EINZELNE E-MAIL LESEN
+      if (emailCommand.action === 'read' && emailCommand.emailIndex) {
+        // Session prüfen oder neu laden
+        let session = getEmailSession(from)
+        if (!session) {
+          const emails = await fetchUserEmails(numericUserId, 5)
+          setEmailSession(from, emails)
+          session = getEmailSession(from)
+        }
+
+        const email = getEmailFromSession(from, emailCommand.emailIndex)
+
+        if (email) {
+          const voiceResponse = formatSingleEmailForVoice(email)
+          await callWithVoiceResponse(from, formatVoiceResponse(voiceResponse, 600))
+
+          // Volltext per SMS
+          await sendSMS(from,
+            `📧 Von: ${email.fromName || email.from}\n` +
+            `📌 ${email.subject}\n\n` +
+            `${email.body.substring(0, 1200)}\n\n` +
+            `💬 Sage "antworte auf E-Mail ${emailCommand.emailIndex}" um zu antworten`
+          )
+
+          return NextResponse.json({ success: true, type: 'email_read', email })
+        } else {
+          await callWithVoiceResponse(from, `E-Mail Nummer ${emailCommand.emailIndex} nicht gefunden.`)
+          return NextResponse.json({ success: false, type: 'email_read', error: 'Not found' })
+        }
+      }
+
+      // AUF E-MAIL ANTWORTEN
+      if (emailCommand.action === 'reply') {
+        const email = getEmailFromSession(from, emailCommand.emailIndex || 1)
+
+        if (email) {
+          // AI generiert Antwort
+          const reply = await generateEmailReply(email, emailCommand.content || 'Danke für die E-Mail')
+
+          // Per Stimme vorlesen was gesendet wird
+          await callWithVoiceResponse(from,
+            `Ich antworte auf die E-Mail von ${email.fromName || email.from}. ` +
+            `Betreff: ${reply.subject}. ` +
+            `Inhalt: ${reply.body.substring(0, 200)}... ` +
+            `Wird jetzt gesendet.`
+          )
+
+          // E-Mail senden
+          const sent = await sendEmailReply(email, reply.body)
+
+          if (sent) {
+            await sendSMS(from,
+              `✅ Antwort gesendet an ${email.from}\n\n` +
+              `📌 ${reply.subject}\n\n` +
+              `${reply.body}`
+            )
+
+            // Task recorden
+            await recordCompletedTask({
+              userId: numericUserId,
+              type: 'email',
+              recipient: email.from,
+              subject: reply.subject,
+              originalText: cleanedTranscript,
+              resultSummary: `Antwort auf "${email.subject}" gesendet`
+            })
+
+            return NextResponse.json({ success: true, type: 'email_reply', sent: true })
+          } else {
+            await sendSMS(from, `❌ E-Mail konnte nicht gesendet werden. Versuche es später nochmal.`)
+            return NextResponse.json({ success: false, type: 'email_reply', error: 'Send failed' })
+          }
+        } else {
+          await callWithVoiceResponse(from, 'Keine E-Mail zum Antworten gefunden. Sage zuerst "meine E-Mails" um sie zu laden.')
+          return NextResponse.json({ success: false, type: 'email_reply', error: 'No email' })
+        }
+      }
+    }
+
+    // ============================================
+    // 2.7 RESEARCH - Wissenschaftliche Artikel suchen
     // ============================================
     const researchKeywords = ['artikel', 'paper', 'studie', 'forschung', 'research', 'zenodo', 'arxiv', 'pubmed', 'doi', 'lies', 'finde artikel', 'suche artikel']
     const hasResearchKeyword = researchKeywords.some(k => cleanedTranscript.toLowerCase().includes(k))

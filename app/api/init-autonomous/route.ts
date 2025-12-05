@@ -144,6 +144,23 @@ export async function GET() {
           created_at TIMESTAMP DEFAULT NOW()
         );
       `
+    },
+    {
+      name: 'user_email_configs',
+      sql: `
+        CREATE TABLE IF NOT EXISTS user_email_configs (
+          id SERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL UNIQUE,
+          provider VARCHAR(20) NOT NULL,
+          email VARCHAR(255) NOT NULL,
+          access_token TEXT NOT NULL,
+          refresh_token TEXT NOT NULL,
+          expires_at BIGINT NOT NULL,
+          enabled BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW()
+        );
+      `
     }
   ]
 
@@ -279,6 +296,21 @@ CREATE TABLE IF NOT EXISTS task_records (
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON task_records(user_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_hash ON task_records(content_hash);
 CREATE INDEX IF NOT EXISTS idx_tasks_created ON task_records(created_at);
+
+-- 9. User Email Configs (für E-Mail-Zugriff)
+CREATE TABLE IF NOT EXISTS user_email_configs (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL UNIQUE,
+  provider VARCHAR(20) NOT NULL, -- 'microsoft' oder 'google'
+  email VARCHAR(255) NOT NULL,
+  access_token TEXT NOT NULL,
+  refresh_token TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  enabled BOOLEAN DEFAULT true,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_email_configs_user ON user_email_configs(user_id);
 `
 
   return NextResponse.json({
