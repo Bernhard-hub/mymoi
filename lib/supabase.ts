@@ -162,3 +162,229 @@ export async function getUserPreferences(telegramId: number): Promise<Record<str
 
   return data?.preferences || {}
 }
+
+// ============================================
+// KONTAKTE - CRM Lite für MOI
+// ============================================
+
+export interface Contact {
+  id?: string
+  telegram_id: number
+  name: string
+  email?: string
+  phone?: string
+  company?: string
+  notes?: string
+  created_at?: string
+}
+
+// Kontakt speichern
+export async function saveContact(telegramId: number, contact: Omit<Contact, 'telegram_id' | 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('contacts')
+    .insert({
+      telegram_id: telegramId,
+      ...contact,
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Save contact error:', error)
+    return null
+  }
+  return data
+}
+
+// Kontakt nach Name suchen
+export async function findContactByName(telegramId: number, name: string): Promise<Contact | null> {
+  const { data } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .ilike('name', `%${name}%`)
+    .limit(1)
+    .single()
+
+  return data || null
+}
+
+// Kontakt nach E-Mail suchen
+export async function findContactByEmail(telegramId: number, email: string): Promise<Contact | null> {
+  const { data } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .ilike('email', `%${email}%`)
+    .limit(1)
+    .single()
+
+  return data || null
+}
+
+// Alle Kontakte eines Users
+export async function getContacts(telegramId: number): Promise<Contact[]> {
+  const { data } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .order('name', { ascending: true })
+
+  return data || []
+}
+
+// E-Mail zu Name finden (für Chain Actions)
+export async function lookupEmailByName(telegramId: number, name: string): Promise<string | null> {
+  const contact = await findContactByName(telegramId, name)
+  return contact?.email || null
+}
+
+// ============================================
+// REMINDERS - MOI erinnert dich!
+// ============================================
+
+export interface Reminder {
+  id?: string
+  telegram_id: number
+  message: string
+  remind_at: string  // ISO timestamp
+  sent: boolean
+  created_at?: string
+}
+
+// Reminder erstellen
+export async function createReminder(telegramId: number, message: string, remindAt: Date) {
+  const { data, error } = await supabase
+    .from('reminders')
+    .insert({
+      telegram_id: telegramId,
+      message,
+      remind_at: remindAt.toISOString(),
+      sent: false,
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Create reminder error:', error)
+    return null
+  }
+  return data
+}
+
+// Fällige Reminders holen (für Cron-Job)
+export async function getDueReminders(): Promise<Reminder[]> {
+  const now = new Date().toISOString()
+
+  const { data } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('sent', false)
+    .lte('remind_at', now)
+
+  return data || []
+}
+
+// Reminder als gesendet markieren
+export async function markReminderSent(reminderId: string) {
+  await supabase
+    .from('reminders')
+    .update({ sent: true })
+    .eq('id', reminderId)
+}
+
+// User Reminders anzeigen
+export async function getUserReminders(telegramId: number): Promise<Reminder[]> {
+  const { data } = await supabase
+    .from('reminders')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .eq('sent', false)
+    .order('remind_at', { ascending: true })
+
+  return data || []
+}
+
+// ============================================
+// PAYMENTS - Credits Tracking
+// ============================================
+
+export interface Payment {
+  id?: string
+  telegram_id: number
+  amount: number      // in cents
+  credits: number
+  package_id: string
+  status: 'pending' | 'completed' | 'failed'
+  stripe_session_id?: string
+  created_at?: string
+}
+
+// Payment erstellen
+export async function createPayment(telegramId: number, packageId: string, amount: number, credits: number, stripeSessionId?: string) {
+  const { data, error } = await supabase
+    .from('payments')
+    .insert({
+      telegram_id: telegramId,
+      package_id: packageId,
+      amount,
+      credits,
+      status: 'pending',
+      stripe_session_id: stripeSessionId,
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single()
+
+  if (error) {
+    console.error('Create payment error:', error)
+    return null
+  }
+  return data
+}
+
+// Payment abschließen
+export async function completePayment(stripeSessionId: string) {
+  const { data: payment } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('stripe_session_id', stripeSessionId)
+    .single()
+
+  if (!payment) return null
+
+  // Status updaten
+  await supabase
+    .from('payments')
+    .update({ status: 'completed' })
+    .eq('id', payment.id)
+
+  // Credits gutschreiben
+  const { data: user } = await supabase
+    .from('users')
+    .select('credits')
+    .eq('telegram_id', payment.telegram_id)
+    .single()
+
+  if (user) {
+    await supabase
+      .from('users')
+      .update({ credits: user.credits + payment.credits })
+      .eq('telegram_id', payment.telegram_id)
+  }
+
+  return payment
+}
+
+// User Payments anzeigen
+export async function getUserPayments(telegramId: number): Promise<Payment[]> {
+  const { data } = await supabase
+    .from('payments')
+    .select('*')
+    .eq('telegram_id', telegramId)
+    .order('created_at', { ascending: false })
+
+  return data || []
+}

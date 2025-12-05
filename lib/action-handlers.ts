@@ -9,7 +9,13 @@ import { createPresentation } from './pptx'
 import { createICS, parseCalendarFromAI } from './ics'
 import { sendEmail } from './email'
 import { searchYouTube, searchWeb, getWeather, getNews } from './web-search'
-import { saveAsset, addToHistory } from './supabase'
+import {
+  saveAsset,
+  addToHistory,
+  saveContact,
+  lookupEmailByName,
+  createReminder
+} from './supabase'
 
 interface ActionContext {
   userId: number
@@ -64,10 +70,24 @@ function buildDocumentPrompt(docType: string, params: any): string {
 }
 
 // ============================================
-// SEND EMAIL
+// SEND EMAIL - Mit Kontakt-Lookup
 // ============================================
 async function handleSendEmail(params: any, ctx: ActionContext) {
-  const { to, subject, body, attachDocument, dependencyResult } = params
+  let { to, subject, body, attachDocument, dependencyResult } = params
+
+  // Wenn "to" ein Name ist, versuche E-Mail zu finden
+  if (to && !to.includes('@')) {
+    const lookedUpEmail = await lookupEmailByName(ctx.userId, to)
+    if (lookedUpEmail) {
+      to = lookedUpEmail
+    } else {
+      // Kein Kontakt gefunden - Fehler zurückgeben
+      return {
+        success: false,
+        error: `Kein Kontakt "${to}" gefunden. Speichere zuerst den Kontakt mit E-Mail-Adresse.`
+      }
+    }
+  }
 
   let emailBody = body
   let attachments: any[] = []
@@ -91,14 +111,24 @@ async function handleSendEmail(params: any, ctx: ActionContext) {
     emailBody = asset.content
   }
 
+  // Validierung
+  if (!to || !to.includes('@')) {
+    return {
+      success: false,
+      error: 'Keine gültige E-Mail-Adresse. Bitte gib eine E-Mail an oder speichere einen Kontakt.'
+    }
+  }
+
   const result = await sendEmail({
-    to: to || 'test@example.com', // TODO: Aus Kontakten laden
+    to,
     subject: subject || 'Nachricht von MOI',
     body: emailBody,
     attachments
   })
 
-  await addToHistory(ctx.userId, 'assistant', `E-Mail gesendet an ${to}: ${subject}`)
+  if (result.success) {
+    await addToHistory(ctx.userId, 'assistant', `E-Mail gesendet an ${to}: ${subject}`)
+  }
 
   return result
 }
@@ -111,17 +141,28 @@ async function handleCreateCalendar(params: any, ctx: ActionContext) {
 
   // Datum parsen
   let eventDate = date
+  const now = new Date()
+
   if (date === 'morgen' || date === 'tomorrow') {
-    const tomorrow = new Date()
+    const tomorrow = new Date(now)
     tomorrow.setDate(tomorrow.getDate() + 1)
     eventDate = tomorrow.toISOString().split('T')[0]
   } else if (date === 'heute' || date === 'today') {
-    eventDate = new Date().toISOString().split('T')[0]
+    eventDate = now.toISOString().split('T')[0]
+  } else if (date === 'übermorgen') {
+    const dayAfter = new Date(now)
+    dayAfter.setDate(dayAfter.getDate() + 2)
+    eventDate = dayAfter.toISOString().split('T')[0]
+  } else if (!date) {
+    // Default: morgen
+    const tomorrow = new Date(now)
+    tomorrow.setDate(tomorrow.getDate() + 1)
+    eventDate = tomorrow.toISOString().split('T')[0]
   }
 
   const events = [{
     title: title || 'Event',
-    date: eventDate || new Date().toISOString().split('T')[0],
+    date: eventDate,
     time: time || '10:00',
     duration: duration || '1h',
     location,
@@ -152,19 +193,62 @@ async function handleSendWhatsapp(params: any, ctx: ActionContext) {
 }
 
 // ============================================
-// CREATE REMINDER
+// CREATE REMINDER - Echtes Reminder System!
 // ============================================
 async function handleCreateReminder(params: any, ctx: ActionContext) {
-  const { message, datetime } = params
+  const { message, datetime, date, time } = params
 
-  // TODO: Reminder in DB speichern und Scheduled Job erstellen
-  // Für jetzt: Kalender-Event erstellen
-  return handleCreateCalendar({
-    title: `⏰ ${message}`,
-    date: datetime?.split('T')[0] || new Date().toISOString().split('T')[0],
-    time: datetime?.split('T')[1]?.substring(0, 5) || '09:00',
-    duration: '15m'
-  }, ctx)
+  // Datum/Zeit parsen
+  let remindAt: Date
+
+  if (datetime) {
+    remindAt = new Date(datetime)
+  } else {
+    const now = new Date()
+
+    // Datum bestimmen
+    let targetDate: Date
+    if (date === 'morgen' || date === 'tomorrow') {
+      targetDate = new Date(now)
+      targetDate.setDate(targetDate.getDate() + 1)
+    } else if (date === 'heute' || date === 'today' || !date) {
+      targetDate = now
+    } else if (date === 'übermorgen') {
+      targetDate = new Date(now)
+      targetDate.setDate(targetDate.getDate() + 2)
+    } else {
+      targetDate = new Date(date)
+    }
+
+    // Zeit setzen
+    const [hours, minutes] = (time || '09:00').split(':').map(Number)
+    targetDate.setHours(hours, minutes, 0, 0)
+
+    remindAt = targetDate
+  }
+
+  // Reminder in DB speichern
+  const reminder = await createReminder(ctx.userId, message, remindAt)
+
+  if (reminder) {
+    await addToHistory(ctx.userId, 'assistant', `Erinnerung gesetzt: "${message}" am ${remindAt.toLocaleString('de-DE')}`)
+
+    return {
+      type: 'reminder',
+      success: true,
+      message,
+      remindAt: remindAt.toISOString(),
+      formatted: remindAt.toLocaleString('de-DE', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+  }
+
+  return { type: 'reminder', success: false, error: 'Konnte Erinnerung nicht speichern' }
 }
 
 // ============================================
@@ -208,13 +292,29 @@ async function handleCreateAsset(params: any, ctx: ActionContext) {
 }
 
 // ============================================
-// SAVE CONTACT
+// SAVE CONTACT - CRM Integration
 // ============================================
 async function handleSaveContact(params: any, ctx: ActionContext) {
-  const { name, phone, email } = params
+  const { name, phone, email, company, notes } = params
 
-  // TODO: In Supabase contacts Tabelle speichern
-  return { type: 'contact', name, phone, email, saved: true }
+  if (!name) {
+    return { type: 'contact', success: false, error: 'Name ist erforderlich' }
+  }
+
+  const contact = await saveContact(ctx.userId, {
+    name,
+    phone,
+    email,
+    company,
+    notes
+  })
+
+  if (contact) {
+    await addToHistory(ctx.userId, 'assistant', `Kontakt gespeichert: ${name}`)
+    return { type: 'contact', success: true, contact }
+  }
+
+  return { type: 'contact', success: false, error: 'Kontakt konnte nicht gespeichert werden' }
 }
 
 // ============================================
