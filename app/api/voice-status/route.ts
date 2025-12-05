@@ -780,11 +780,12 @@ async function transcribeWithWhisper(audioUrl: string): Promise<string> {
 
   const audioBuffer = await audioResponse.arrayBuffer()
 
-  // An Groq Whisper senden
+  // An Groq Whisper senden - MULTILINGUAL!
   const formData = new FormData()
   formData.append('file', new Blob([audioBuffer]), 'audio.mp3')
   formData.append('model', 'whisper-large-v3')
-  formData.append('language', 'de') // Deutsch als Standard
+  // KEIN language Parameter = Auto-Detect für ALLE Sprachen!
+  // Whisper erkennt automatisch: Deutsch, Englisch, Spanisch, Französisch, etc.
 
   const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
