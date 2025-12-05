@@ -5,6 +5,7 @@ import { createPresentation } from '@/lib/pptx'
 import { sendSMS, sendWhatsApp } from '@/lib/twilio-deliver'
 import { sendEmail, extractEmailFromText } from '@/lib/email'
 import { generateImages, uploadImageToStorage, generateImagePrompts } from '@/lib/image-gen'
+import { processWithBrain, enrichWithKnowledge, saveUserKnowledge } from '@/lib/moi-brain'
 
 // ============================================
 // VOICE STATUS - Die Haupt-Verarbeitung!
@@ -60,9 +61,37 @@ export async function POST(request: NextRequest) {
       .trim()
 
     // ============================================
-    // 3. Asset generieren (GLEICHE Engine wie Telegram!)
+    // 2.5 MOI BRAIN - Verstehen, Lernen, Nachfragen
     // ============================================
-    const asset = await generateAsset(cleanedTranscript)
+    // Verwende Phone als User-ID für Voice (vereinfacht)
+    const numericUserId = Math.abs(from.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
+
+    const brainResult = await processWithBrain(cleanedTranscript, numericUserId, from)
+
+    // Wenn Klärung nötig: SMS mit Fragen senden und warten
+    if (brainResult.status === 'clarify' && brainResult.clarificationQuestions) {
+      const questions = brainResult.clarificationQuestions.join('\n• ')
+      await sendSMS(from, `🤔 Kurze Rückfrage:\n\n• ${questions}\n\nAntworte per SMS oder ruf nochmal an!`)
+
+      console.log(`❓ Klärung angefordert für ${from}`)
+      return NextResponse.json({ success: true, status: 'clarification_needed' })
+    }
+
+    // Text mit User-Wissen anreichern
+    const enrichedTranscript = await enrichWithKnowledge(cleanedTranscript, numericUserId)
+    console.log(`🧠 Angereicherter Text: ${enrichedTranscript}`)
+
+    // Wissen aus der Anfrage lernen (wenn User explizit sagt "X bedeutet Y")
+    const learnMatch = cleanedTranscript.match(/(\w+)\s+(?:bedeutet|heißt|ist|steht für)\s+(.+)/i)
+    if (learnMatch) {
+      await saveUserKnowledge(numericUserId, learnMatch[1], learnMatch[2])
+      await sendSMS(from, `🧠 Gemerkt: "${learnMatch[1]}" = "${learnMatch[2]}"`)
+    }
+
+    // ============================================
+    // 3. Asset generieren (MIT Brain-Insights!)
+    // ============================================
+    const asset = await generateAsset(enrichedTranscript)
 
     console.log(`✨ Asset erstellt: ${asset.type} - ${asset.title}`)
 

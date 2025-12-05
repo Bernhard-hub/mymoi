@@ -24,7 +24,8 @@
       "Bash(host:*)",
       "WebSearch",
       "Bash(printf \"y\\ny\\n\")",
-      "Bash(printf:*)"
+      "Bash(printf:*)",
+      "WebFetch(domain:api.together.xyz)"
     ],
     "deny": [],
     "ask": []
