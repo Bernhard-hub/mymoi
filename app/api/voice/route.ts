@@ -1,58 +1,81 @@
 import { NextRequest, NextResponse } from 'next/server'
 import twilio from 'twilio'
-import { getProactiveVoiceGreeting } from '@/lib/proactive-intelligence'
+import { supabase } from '@/lib/supabase'
 
 const VoiceResponse = twilio.twiml.VoiceResponse
 
 // ============================================
-// TWILIO VOICE WEBHOOK - Eingehende Anrufe
+// TWILIO VOICE WEBHOOK - Das beste Sprachtool der Welt
 // ============================================
-// Twilio ruft diese URL wenn jemand die MOI-Nummer anruft
+// Flow: Anruf → Begrüßung → Aufnahme → voice-conversation (Loop)
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData()
     const from = formData.get('From') as string
     const callSid = formData.get('CallSid') as string
 
-    console.log(`📞 Neuer Anruf von ${from} (${callSid})`)
+    console.log(`📞 Anruf von ${from}`)
 
-    // User-ID aus Telefonnummer
     const userId = Math.abs(from.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
+
+    // Personalisierte Begrüßung
+    let greeting = 'Hallo! Was kann ich für dich tun?'
+
+    try {
+      // Check ob wir den User kennen
+      const { data: interactions } = await supabase
+        .from('voice_interactions')
+        .select('*')
+        .eq('phone', from)
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (interactions && interactions.length > 0) {
+        // Wiederkehrender User
+        const hour = new Date().getHours()
+        const timeGreeting = hour < 12 ? 'Guten Morgen' : hour < 18 ? 'Hallo' : 'Guten Abend'
+        greeting = `${timeGreeting}! Schön, dass du wieder anrufst. Was brauchst du?`
+      }
+
+      // Check pending follow-ups
+      const { data: followups } = await supabase
+        .from('follow_ups')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .limit(3)
+
+      if (followups && followups.length > 0) {
+        greeting += ` Übrigens, du hast ${followups.length} offene Follow-ups.`
+      }
+    } catch (e) {
+      console.log('Greeting personalization skipped:', e)
+    }
 
     const response = new VoiceResponse()
 
-    // PROAKTIVE BEGRÜSSUNG - personalisiert!
-    let greeting = 'Hallo! Sprich jetzt.'
-    try {
-      greeting = await getProactiveVoiceGreeting(from, userId)
-    } catch (e) {
-      console.log('Proactive greeting fallback:', e)
-    }
-
+    // Begrüßung
     response.say(
       { language: 'de-DE', voice: 'Polly.Vicki' },
       `<speak><prosody rate="95%">${greeting}</prosody></speak>`
     )
 
-    // Aufnahme starten
-    // - maxLength: 120 Sekunden max
-    // - timeout: 2 Sekunden Stille = Ende (natürliches Sprechen)
-    // - finishOnKey: # drücken beendet auch
-    // - transcribe: false (wir machen das selbst mit Whisper - besser!)
-    // - recordingStatusCallback: wird aufgerufen wenn Aufnahme fertig
-    // Feste Production URL für Callbacks (Preview URLs funktionieren nicht mit Twilio)
+    // Aufnahme starten - geht direkt zu voice-conversation
     const baseUrl = 'https://mymoi-bot.vercel.app'
 
-    // KONVERSATION: Aufnahme → voice-done → voice-process (antwortet!)
     response.record({
       maxLength: 120,
-      timeout: 3, // 3 Sek Stille = fertig (natürlicher)
+      timeout: 3,
       playBeep: false,
-      action: `${baseUrl}/api/voice-done`,
+      action: `${baseUrl}/api/voice-conversation`,
     })
 
-    // Falls nichts aufgenommen wird (Timeout ohne Sprache)
-    response.say({ language: 'de-DE' }, 'Keine Aufnahme erhalten. Tschüss.')
+    // Falls Timeout
+    response.say({ language: 'de-DE', voice: 'Polly.Vicki' },
+      'Keine Aufnahme erkannt. Tschüss!'
+    )
+    response.hangup()
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' }
@@ -61,8 +84,9 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Voice webhook error:', error)
 
-    const response = new twilio.twiml.VoiceResponse()
-    response.say({ language: 'de-DE' }, 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.')
+    const response = new VoiceResponse()
+    response.say({ language: 'de-DE' }, 'Ein Fehler ist aufgetreten.')
+    response.hangup()
 
     return new NextResponse(response.toString(), {
       headers: { 'Content-Type': 'text/xml' }
