@@ -8,6 +8,24 @@ const VoiceResponse = twilio.twiml.VoiceResponse
 // TWILIO VOICE WEBHOOK - Das beste Sprachtool der Welt
 // ============================================
 // Flow: Anruf → Begrüßung → Aufnahme → voice-conversation (Loop)
+//
+// HYBRID-MODELL: Telefon nur für Admin, Telegram für alle anderen
+// So hält das $94 Twilio-Guthaben JAHRE!
+
+// Admin-Nummern die telefonieren dürfen (Whitelist)
+const ADMIN_PHONES = [
+  '+436769271800',  // Bernhard
+  '+43676927180',   // Ohne führende 0
+  '436769271800',   // Ohne +
+]
+
+function isAdmin(phone: string): boolean {
+  const normalized = phone.replace(/[\s\-\(\)]/g, '')
+  return ADMIN_PHONES.some(admin =>
+    normalized.includes(admin.replace('+', '')) ||
+    admin.includes(normalized.replace('+', ''))
+  )
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,6 +34,22 @@ export async function POST(request: NextRequest) {
     const callSid = formData.get('CallSid') as string
 
     console.log(`📞 Anruf von ${from}`)
+
+    // Check ob Admin
+    if (!isAdmin(from)) {
+      console.log(`⛔ Nicht-Admin Anruf von ${from} - Weiterleitung zu Telegram`)
+      const response = new VoiceResponse()
+      response.say(
+        { language: 'de-DE', voice: 'Polly.Vicki' },
+        'Willkommen bei MOI! Telefon ist nur für Premium-Nutzer. Nutze unseren kostenlosen Telegram Bot: at jo underscore my underscore moi underscore bot. Dort hast du alle Features kostenlos! Tschüss!'
+      )
+      response.hangup()
+      return new NextResponse(response.toString(), {
+        headers: { 'Content-Type': 'text/xml' }
+      })
+    }
+
+    console.log(`✅ Admin-Anruf von ${from}`)
 
     const userId = Math.abs(from.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
 

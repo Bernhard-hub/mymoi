@@ -26,7 +26,10 @@
       "Bash(printf \"y\\ny\\n\")",
       "Bash(printf:*)",
       "WebFetch(domain:api.together.xyz)",
-      "Bash(git -C D:/MYMOI status --short)"
+      "Bash(git -C D:/MYMOI status --short)",
+      "WebFetch(domain:console.twilio.com)",
+      "Bash(echo:*)",
+      "WebFetch(domain:www.twilio.com)"
     ],
     "deny": [],
     "ask": []

@@ -11,10 +11,23 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 // ============================================
 // WELTBESTES SMS FEATURE - Revolution!
 // ============================================
-// Vollständige AI-Konversation per SMS
-// Direkte Aktionen: E-Mail, Kalender, Recherche
-// Smart Context Memory zwischen Nachrichten
-// Multilingual - Deutsch, Englisch, jede Sprache!
+// HYBRID-MODELL: SMS nur für Admin, Telegram für alle anderen
+// So hält das $94 Twilio-Guthaben JAHRE!
+
+// Admin-Nummern die SMS nutzen dürfen (Whitelist)
+const ADMIN_PHONES = [
+  '+436769271800',  // Bernhard
+  '+43676927180',
+  '436769271800',
+]
+
+function isAdmin(phone: string): boolean {
+  const normalized = phone.replace(/[\s\-\(\)]/g, '')
+  return ADMIN_PHONES.some(admin =>
+    normalized.includes(admin.replace('+', '')) ||
+    admin.includes(normalized.replace('+', ''))
+  )
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -27,6 +40,16 @@ export async function POST(request: NextRequest) {
     console.log(`📱 SMS von ${from}: ${body}`)
 
     const response = new MessagingResponse()
+
+    // Check ob Admin
+    if (!isAdmin(from)) {
+      console.log(`⛔ Nicht-Admin SMS von ${from}`)
+      response.message('MOI SMS ist für Premium-Nutzer. Nutze kostenlos: Telegram @jo_my_moi_bot - Alle Features gratis!')
+      return xml(response)
+    }
+
+    console.log(`✅ Admin-SMS von ${from}`)
+
     const lowerBody = body.toLowerCase().trim()
     const userId = Math.abs(from.split('').reduce((a, c) => a + c.charCodeAt(0), 0))
 
