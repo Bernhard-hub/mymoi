@@ -8,6 +8,7 @@ import { searchYouTube, searchWeb, getWeather, getNews, getMapLink } from '@/lib
 import { sendInvoice, answerPreCheckoutQuery, sendPaymentMenu, processSuccessfulPayment, CREDIT_PACKAGES } from '@/lib/payment'
 import { parseChainActions, executeChain, mightBeChain, ChainResult } from '@/lib/chain-actions'
 import { actionHandlers } from '@/lib/action-handlers'
+import { isIntegrationRequest, parseIntegrationRequest, executeIntegration, getAvailableIntegrations } from '@/lib/app-integrations'
 
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
@@ -266,13 +267,16 @@ const WELCOME_MESSAGE = `Hey! 👋
 
 Ich bin *MOI* - der AI-Assistent der HANDELT!
 
-🔗 *NEU: Chain Actions!*
-_Ein Satz - mehrere Aktionen:_
-"Erstell ein Angebot und schick es per Mail"
-→ Dokument + E-Mail in einem!
+🔗 *Chain Actions:*
+"Erstell Angebot und schick per Mail"
+→ Mehrere Aktionen in einem!
+
+📱 *App Integrationen:*
+Notion, Trello, Todoist, Discord, Slack, GitHub...
+→ "Speicher in Notion: Meine Idee"
 
 📊 *200+ AI Assets:*
-Präsentationen, E-Mails, Business Plans...
+Präsentationen, E-Mails, Websites...
 
 🌐 *Live-Daten:*
 YouTube, Wetter, News, Maps
@@ -280,8 +284,11 @@ YouTube, Wetter, News, Maps
 📄 *Exports:*
 PDF, PowerPoint, Kalender (.ics)
 
-💳 /buy - Credits kaufen
-💰 /credits - Deine Credits
+📧 *E-Mail direkt:*
+"max@firma.de Treffen morgen um 10"
+→ Sofort gesendet!
+
+💳 /buy - Credits
 📜 /history - Gespräche
 
 🧠 _Ich erinnere mich!_
@@ -981,6 +988,53 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
     if (intent.type === 'buy') {
       await sendPaymentMenu(chatId, userId)
       return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // APP INTEGRATIONS - Notion, Trello, Todoist, etc.
+    // ============================================
+    if (isIntegrationRequest(userText)) {
+      const hasCredits = await useCredit(userId)
+      if (!hasCredits) {
+        await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendMessage(chatId, '🔗 *Verbinde mit App...*')
+      await addToHistory(userId, 'user', userText)
+
+      try {
+        const request = await parseIntegrationRequest(userText)
+
+        if (request.type === 'unknown') {
+          // Zeige verfügbare Integrationen
+          const available = getAvailableIntegrations()
+          if (available.length > 0) {
+            await sendMessage(chatId, `🔗 *Verfügbare Integrationen:*\n\n${available.map(a => `• ${a}`).join('\n')}\n\n_Sag z.B. "Speicher in Notion: Meine Idee"_`)
+          } else {
+            await sendMessage(chatId, `🔗 *Keine Integrationen konfiguriert*\n\nKontaktiere den Admin um Apps zu verbinden!`)
+          }
+          return NextResponse.json({ ok: true })
+        }
+
+        const result = await executeIntegration(request)
+
+        if (result.success) {
+          let message = `✅ *${result.message}*`
+          if (result.url) {
+            message += `\n\n[🔗 Öffnen](${result.url})`
+          }
+          await sendMessage(chatId, message, { disable_web_page_preview: true })
+          await addToHistory(userId, 'assistant', result.message)
+        } else {
+          await sendMessage(chatId, `❌ *Fehler:* ${result.message}`)
+        }
+
+        return NextResponse.json({ ok: true })
+      } catch (e) {
+        console.error('Integration error:', e)
+        // Fallback zu normaler Verarbeitung
+      }
     }
 
     // ============================================
