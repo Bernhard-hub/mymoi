@@ -34,7 +34,8 @@
       "Bash(timeout 10 npx vercel logs:*)",
       "Bash(timeout 15 npx vercel logs:*)",
       "Bash(python3:*)",
-      "Bash(unzip:*)"
+      "Bash(unzip:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

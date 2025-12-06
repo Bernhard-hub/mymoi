@@ -2,6 +2,18 @@
 
 import { useState, useRef, useEffect } from 'react'
 
+// MOI Brand Colors - Emerald Green Theme
+const COLORS = {
+  primary: '#10b981',      // Emerald-500
+  primaryDark: '#059669',  // Emerald-600
+  primaryLight: '#34d399', // Emerald-400
+  glow: 'rgba(16, 185, 129, 0.5)',
+  bg: '#0a0f0d',           // Dark green-tinted black
+  bgCard: '#0d1512',       // Slightly lighter
+  text: '#ecfdf5',         // Emerald-50
+  textMuted: '#6ee7b7',    // Emerald-300
+}
+
 export default function Home() {
   const [isListening, setIsListening] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -98,31 +110,54 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-zinc-950 to-zinc-900 text-white flex flex-col">
+    <main className="min-h-screen text-white flex flex-col" style={{ background: 'linear-gradient(to bottom, #0a0f0d, #061009)' }}>
       {/* Header */}
-      <header className="p-4 text-center border-b border-zinc-800">
-        <h1 className="text-2xl font-bold bg-gradient-to-r from-violet-500 to-cyan-500 bg-clip-text text-transparent">
-          MOI
-        </h1>
-        <p className="text-xs text-zinc-500 mt-1">Genesis Engine</p>
+      <header className="p-4 text-center border-b" style={{ borderColor: '#1a2f25' }}>
+        <div className="flex items-center justify-center gap-2">
+          <svg viewBox="0 0 100 60" className="w-10 h-6">
+            {/* Soundwave Logo */}
+            <rect x="5" y="20" width="6" height="20" rx="3" fill="#10b981"/>
+            <rect x="15" y="12" width="6" height="36" rx="3" fill="#10b981"/>
+            <rect x="25" y="18" width="6" height="24" rx="3" fill="#10b981"/>
+            <rect x="35" y="8" width="6" height="44" rx="3" fill="#10b981"/>
+            <rect x="45" y="4" width="6" height="52" rx="3" fill="#10b981"/>
+            <rect x="55" y="8" width="6" height="44" rx="3" fill="#10b981"/>
+            <rect x="65" y="14" width="6" height="32" rx="3" fill="#10b981"/>
+            <rect x="75" y="10" width="6" height="40" rx="3" fill="#10b981"/>
+            <rect x="85" y="18" width="6" height="24" rx="3" fill="#10b981"/>
+          </svg>
+          <h1 className="text-2xl font-bold" style={{ color: '#10b981' }}>MOI</h1>
+        </div>
+        <p className="text-xs mt-1" style={{ color: '#34d399' }}>Genesis Engine</p>
       </header>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 ? (
-          <div className="text-center text-zinc-500 mt-20">
-            <div className="text-6xl mb-4">🎤</div>
+          <div className="text-center mt-20" style={{ color: '#6ee7b7' }}>
+            <div className="mb-6">
+              <svg viewBox="0 0 100 60" className="w-24 h-14 mx-auto opacity-60">
+                <rect x="5" y="20" width="6" height="20" rx="3" fill="#10b981"/>
+                <rect x="15" y="12" width="6" height="36" rx="3" fill="#10b981"/>
+                <rect x="25" y="18" width="6" height="24" rx="3" fill="#10b981"/>
+                <rect x="35" y="8" width="6" height="44" rx="3" fill="#10b981"/>
+                <rect x="45" y="4" width="6" height="52" rx="3" fill="#10b981"/>
+                <rect x="55" y="8" width="6" height="44" rx="3" fill="#10b981"/>
+                <rect x="65" y="14" width="6" height="32" rx="3" fill="#10b981"/>
+                <rect x="75" y="10" width="6" height="40" rx="3" fill="#10b981"/>
+                <rect x="85" y="18" width="6" height="24" rx="3" fill="#10b981"/>
+              </svg>
+            </div>
             <p className="text-lg">Tippe auf den Button und sprich</p>
-            <p className="text-sm mt-2">Du sprichst. Es entsteht.</p>
+            <p className="text-sm mt-2 opacity-70">Du sprichst. Es entsteht.</p>
           </div>
         ) : (
           messages.map((msg, i) => (
             <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                msg.role === 'user'
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-zinc-800 text-zinc-100'
-              }`}>
+              <div className={`max-w-[80%] rounded-2xl px-4 py-3`} style={{
+                background: msg.role === 'user' ? '#10b981' : '#0d1f17',
+                color: msg.role === 'user' ? '#0a0f0d' : '#ecfdf5'
+              }}>
                 <p>{msg.text}</p>
                 <p className="text-xs opacity-50 mt-1">
                   {msg.timestamp.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
@@ -133,7 +168,7 @@ export default function Home() {
         )}
 
         {transcript && (
-          <div className="text-center text-zinc-400 animate-pulse">
+          <div className="text-center animate-pulse" style={{ color: '#6ee7b7' }}>
             {transcript}
           </div>
         )}
@@ -147,21 +182,26 @@ export default function Home() {
           onTouchStart={startListening}
           onTouchEnd={stopListening}
           disabled={isProcessing}
-          className={`
-            w-20 h-20 rounded-full flex items-center justify-center
-            transition-all duration-200 transform
-            ${isListening
-              ? 'bg-red-500 scale-110 animate-pulse shadow-lg shadow-red-500/50'
+          className="w-20 h-20 rounded-full flex items-center justify-center transition-all duration-200 transform"
+          style={{
+            background: isListening
+              ? '#ef4444'
               : isProcessing
-                ? 'bg-zinc-700 cursor-wait'
-                : 'bg-gradient-to-r from-violet-600 to-cyan-600 hover:scale-105 active:scale-95 shadow-lg shadow-violet-500/30'
-            }
-          `}
+                ? '#1a2f25'
+                : 'linear-gradient(135deg, #10b981, #059669)',
+            transform: isListening ? 'scale(1.1)' : 'scale(1)',
+            boxShadow: isListening
+              ? '0 0 30px rgba(239, 68, 68, 0.5)'
+              : isProcessing
+                ? 'none'
+                : '0 0 30px rgba(16, 185, 129, 0.4)',
+            cursor: isProcessing ? 'wait' : 'pointer'
+          }}
         >
           {isProcessing ? (
             <svg className="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="#10b981" strokeWidth="4"/>
+              <path className="opacity-75" fill="#10b981" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
           ) : (
             <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
@@ -173,7 +213,7 @@ export default function Home() {
       </div>
 
       {/* Hint */}
-      <p className="text-center text-xs text-zinc-600 pb-4">
+      <p className="text-center text-xs pb-4" style={{ color: '#34d399' }}>
         {isListening ? 'Loslassen zum Senden' : 'Gedrückt halten zum Sprechen'}
       </p>
 
@@ -210,20 +250,22 @@ function InstallPrompt() {
   if (!showPrompt) return null
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 bg-zinc-800 rounded-2xl p-4 flex items-center gap-4 shadow-xl">
+    <div className="fixed bottom-20 left-4 right-4 rounded-2xl p-4 flex items-center gap-4 shadow-xl" style={{ background: '#0d1f17', border: '1px solid #1a3d2e' }}>
       <div className="flex-1">
-        <p className="font-semibold">MOI installieren</p>
-        <p className="text-sm text-zinc-400">Schneller Zugriff vom Homescreen</p>
+        <p className="font-semibold" style={{ color: '#ecfdf5' }}>MOI installieren</p>
+        <p className="text-sm" style={{ color: '#6ee7b7' }}>Schneller Zugriff vom Homescreen</p>
       </div>
       <button
         onClick={install}
-        className="bg-violet-600 px-4 py-2 rounded-lg font-medium"
+        className="px-4 py-2 rounded-lg font-medium"
+        style={{ background: '#10b981', color: '#0a0f0d' }}
       >
         Installieren
       </button>
       <button
         onClick={() => setShowPrompt(false)}
-        className="text-zinc-400 p-2"
+        className="p-2"
+        style={{ color: '#6ee7b7' }}
       >
         ✕
       </button>
