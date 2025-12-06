@@ -556,16 +556,26 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
 
       // /anruf Command - Voice-Chat Modus (kostenlos!)
       if (message.text === '/anruf' || message.text === '/call' || message.text.toLowerCase().includes('ruf mich an')) {
+        // Erst Voice-Begrüßung senden
         await sendChatAction(chatId, 'record_voice')
-        await sendVoiceResponse(chatId, 'Hallo! Ich bin MOI, dein persönlicher Assistent. Schick mir jetzt eine Sprachnachricht und ich antworte dir sofort mit meiner Stimme. Frag mich alles was du wissen willst!')
-        await sendMessage(chatId, `📞 *Voice-Chat aktiv!*
+        await sendVoiceResponse(chatId, 'Hallo! Ich bin MOI. Schick mir einfach eine Sprachnachricht - ich antworte dir sofort mit meiner Stimme!')
 
-🎤 Schick mir eine Sprachnachricht
-🔊 Ich antworte mit Sprache
+        // Einfachste Anleitung - Fokus auf Sprachnachricht
+        await sendMessage(chatId, `🎙️ *MOI Voice-Chat aktiv!*
 
-_Wie telefonieren - nur kostenlos!_
+Schick mir eine *Sprachnachricht* - ich antworte mit Stimme!
 
-💡 Tipp: Halte den Mikrofon-Button gedrückt und sprich!`)
+📱 *Handy:* Halte das Mikrofon-Icon gedrückt
+💻 *Desktop:* Rechtsklick auf Mikrofon oder Anhang-Icon
+
+_Einfach sprechen - ich höre zu!_ 🎧`, {
+          reply_markup: {
+            keyboard: [[{ text: '🎤 Sprachnachricht senden', request_contact: false }]],
+            resize_keyboard: true,
+            one_time_keyboard: true,
+            input_field_placeholder: '🎤 Halte für Sprachnachricht gedrückt...'
+          }
+        })
         return NextResponse.json({ ok: true })
       }
 
