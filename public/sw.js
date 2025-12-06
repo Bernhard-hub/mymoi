@@ -128,3 +128,4 @@ async function syncMessages() {
 }
 
 console.log('🚀 MOI Service Worker loaded - Genesis Engine active');
+// Trigger deploy Sa,  6. Dez 2025 21:21:56

@@ -35,7 +35,9 @@
       "Bash(timeout 15 npx vercel logs:*)",
       "Bash(python3:*)",
       "Bash(unzip:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "WebFetch(domain:mymoi.app)",
+      "WebFetch(domain:mymoi-bot.vercel.app)"
     ],
     "deny": [],
     "ask": []
