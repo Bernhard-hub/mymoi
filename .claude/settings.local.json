@@ -29,7 +29,8 @@
       "Bash(git -C D:/MYMOI status --short)",
       "WebFetch(domain:console.twilio.com)",
       "Bash(echo:*)",
-      "WebFetch(domain:www.twilio.com)"
+      "WebFetch(domain:www.twilio.com)",
+      "Bash(npx fix-react2shell-next:*)"
     ],
     "deny": [],
     "ask": []

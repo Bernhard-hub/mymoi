@@ -506,6 +506,47 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
           return NextResponse.json({ ok: true })
         }
       }
+    } else if (message.contact) {
+      // Contact shared - Telefonnummer speichern und anrufen
+      const phone = message.contact.phone_number
+      const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`
+
+      // Speichere Nummer
+      try {
+        await supabase.from('telegram_users').upsert({
+          telegram_id: chatId,
+          phone: phoneFormatted,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'telegram_id' })
+      } catch {}
+
+      await sendMessage(chatId, `📞 *Perfekt!* Ich rufe dich jetzt an...\n\n📱 ${phoneFormatted}`)
+
+      // Anrufen!
+      try {
+        const twilio = (await import('twilio')).default
+        const twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID!,
+          process.env.TWILIO_AUTH_TOKEN!
+        )
+
+        await twilioClient.calls.create({
+          to: phoneFormatted,
+          from: process.env.TWILIO_PHONE_NUMBER!,
+          url: 'https://mymoi-bot.vercel.app/api/voice'
+        })
+
+        await sendMessage(chatId, `✅ *Anruf gestartet!*\n\nNimm ab - MOI wartet auf dich! 🎤`, {
+          reply_markup: { remove_keyboard: true }
+        })
+      } catch (e: any) {
+        console.error('Twilio call error:', e)
+        await sendMessage(chatId, `❌ Anruf fehlgeschlagen.\n\nRuf mich direkt an: *+1 (888) 664-2970*`, {
+          reply_markup: { remove_keyboard: true }
+        })
+      }
+      return NextResponse.json({ ok: true })
+
     } else if (message.text) {
       // COMMANDS
       if (message.text === '/start') {
@@ -605,47 +646,6 @@ Oder ruf mich direkt an:
               resize_keyboard: true,
               one_time_keyboard: true
             }
-          })
-        }
-        return NextResponse.json({ ok: true })
-      }
-
-      // Contact shared - Telefonnummer speichern und anrufen
-      if (message.contact) {
-        const phone = message.contact.phone_number
-        const phoneFormatted = phone.startsWith('+') ? phone : `+${phone}`
-
-        // Speichere Nummer
-        try {
-          await supabase.from('telegram_users').upsert({
-            telegram_id: chatId,
-            phone: phoneFormatted,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'telegram_id' })
-        } catch {}
-
-        await sendMessage(chatId, `📞 *Perfekt!* Ich rufe dich jetzt an...\n\n📱 ${phoneFormatted}`)
-
-        // Anrufen!
-        try {
-          const twilio = (await import('twilio')).default
-          const twilioClient = twilio(
-            process.env.TWILIO_ACCOUNT_SID!,
-            process.env.TWILIO_AUTH_TOKEN!
-          )
-
-          await twilioClient.calls.create({
-            to: phoneFormatted,
-            from: process.env.TWILIO_PHONE_NUMBER!,
-            url: 'https://mymoi-bot.vercel.app/api/voice'
-          })
-
-          await sendMessage(chatId, `✅ *Anruf gestartet!*\n\nNimm ab - MOI wartet auf dich! 🎤`, {
-            reply_markup: { remove_keyboard: true }
-          })
-        } catch (e: any) {
-          await sendMessage(chatId, `❌ Anruf fehlgeschlagen.\n\nRuf mich direkt an: *+1 (888) 664-2970*`, {
-            reply_markup: { remove_keyboard: true }
           })
         }
         return NextResponse.json({ ok: true })
