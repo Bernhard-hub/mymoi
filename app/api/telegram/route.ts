@@ -597,56 +597,28 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
 
       // /anruf Command - Twilio ruft User an!
       if (message.text === '/anruf' || message.text === '/call' || message.text.toLowerCase().includes('ruf mich an')) {
-        // Prüfe ob User schon Telefonnummer gespeichert hat
-        let userPhone: string | null = null
+        // Admin-Nummer direkt anrufen (Bernhard)
+        const ADMIN_PHONE = '+436769271800'
+
+        await sendMessage(chatId, `📞 *MOI ruft dich an...*\n\nDein Telefon klingelt gleich!`)
+
         try {
-          const { data: userData } = await supabase
-            .from('telegram_users')
-            .select('phone')
-            .eq('telegram_id', chatId)
-            .single()
-          userPhone = userData?.phone
-        } catch {}
+          const twilio = (await import('twilio')).default
+          const twilioClient = twilio(
+            process.env.TWILIO_ACCOUNT_SID!,
+            process.env.TWILIO_AUTH_TOKEN!
+          )
 
-        if (userPhone) {
-          // Telefonnummer bekannt - direkt anrufen!
-          await sendMessage(chatId, `📞 *MOI ruft dich an...*\n\nDein Telefon klingelt gleich!`)
-
-          try {
-            const twilio = (await import('twilio')).default
-            const twilioClient = twilio(
-              process.env.TWILIO_ACCOUNT_SID!,
-              process.env.TWILIO_AUTH_TOKEN!
-            )
-
-            await twilioClient.calls.create({
-              to: userPhone,
-              from: process.env.TWILIO_PHONE_NUMBER!,
-              url: 'https://mymoi-bot.vercel.app/api/voice'
-            })
-
-            await sendMessage(chatId, `✅ Anruf gestartet!\n\n_Nimm ab und sprich mit MOI!_`)
-          } catch (e: any) {
-            await sendMessage(chatId, `❌ Anruf fehlgeschlagen: ${e.message}\n\nRuf mich direkt an: +1 (888) 664-2970`)
-          }
-        } else {
-          // Telefonnummer noch nicht bekannt - Button zum Teilen
-          await sendMessage(chatId, `📞 *MOI Voice-Anruf*
-
-Teile deine Telefonnummer und ich rufe dich SOFORT an!
-
-🆓 *Kostenlos für dich* - MOI übernimmt die Kosten
-🌍 *Weltweit* - Funktioniert überall
-🔒 *Sicher* - Nummer nur für Anrufe
-
-Oder ruf mich direkt an:
-📱 *+1 (888) 664-2970* (Toll-Free)`, {
-            reply_markup: {
-              keyboard: [[{ text: '📱 Telefonnummer teilen', request_contact: true }]],
-              resize_keyboard: true,
-              one_time_keyboard: true
-            }
+          await twilioClient.calls.create({
+            to: ADMIN_PHONE,
+            from: process.env.TWILIO_PHONE_NUMBER!,
+            url: 'https://mymoi-bot.vercel.app/api/voice'
           })
+
+          await sendMessage(chatId, `✅ *Anruf gestartet!*\n\nNimm ab - MOI wartet! 🎤`)
+        } catch (e: any) {
+          console.error('Twilio call error:', e)
+          await sendMessage(chatId, `❌ Anruf fehlgeschlagen.\n\nRuf mich an: *+1 (888) 664-2970*`)
         }
         return NextResponse.json({ ok: true })
       }

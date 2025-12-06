@@ -30,7 +30,8 @@
       "WebFetch(domain:console.twilio.com)",
       "Bash(echo:*)",
       "WebFetch(domain:www.twilio.com)",
-      "Bash(npx fix-react2shell-next:*)"
+      "Bash(npx fix-react2shell-next:*)",
+      "Bash(timeout 10 npx vercel logs:*)"
     ],
     "deny": [],
     "ask": []
