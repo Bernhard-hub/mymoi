@@ -33,7 +33,8 @@
       "Bash(npx fix-react2shell-next:*)",
       "Bash(timeout 10 npx vercel logs:*)",
       "Bash(timeout 15 npx vercel logs:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(unzip:*)"
     ],
     "deny": [],
     "ask": []
