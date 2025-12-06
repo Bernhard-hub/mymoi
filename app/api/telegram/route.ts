@@ -77,23 +77,60 @@ async function sendChatAction(chatId: number, action: 'typing' | 'upload_documen
   })
 }
 
-// Text-to-Speech mit ElevenLabs oder Fallback
+// Text-to-Speech - Hochwertige deutsche Stimme
+// Nutzt OpenAI TTS (beste Qualität) mit Fallback auf Google
 async function sendVoiceResponse(chatId: number, text: string) {
   try {
-    // Kürze den Text auf max 500 Zeichen für Voice
-    const shortText = text.substring(0, 500)
+    // Kürze den Text auf max 1000 Zeichen für Voice
+    const shortText = text.substring(0, 1000)
 
-    // Nutze Google TTS (kostenlos, deutsch)
-    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(shortText)}&tl=de&client=tw-ob`
+    await sendChatAction(chatId, 'record_voice')
 
-    // Voice Message senden
+    // Versuche OpenAI TTS (beste Qualität)
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'tts-1',
+            voice: 'nova', // Weibliche Stimme, klingt natürlich
+            input: shortText,
+            response_format: 'opus'
+          })
+        })
+
+        if (openaiRes.ok) {
+          const audioBuffer = await openaiRes.arrayBuffer()
+          const formData = new FormData()
+          formData.append('chat_id', chatId.toString())
+          formData.append('voice', new Blob([audioBuffer], { type: 'audio/ogg' }), 'voice.ogg')
+
+          const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
+            method: 'POST',
+            body: formData
+          })
+          const result = await response.json()
+          if (result.ok) return true
+        }
+      } catch (e) {
+        console.log('OpenAI TTS failed, using fallback')
+      }
+    }
+
+    // Fallback: Google TTS (kostenlos)
+    const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(shortText.substring(0, 200))}&tl=de&client=tw-ob`
+
     const response = await fetch(`${TELEGRAM_API}/sendVoice`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
         voice: ttsUrl,
-        caption: text.length > 500 ? '_Gekürzt für Audio_' : undefined
+        caption: text.length > 200 ? '_Text gekürzt_' : undefined
       })
     })
 
@@ -514,6 +551,21 @@ _"Termin morgen 14 Uhr Zahnarzt"_
 _"Meeting am Freitag 10:00 mit Team"_
 
 Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /anruf Command - Voice-Chat Modus (kostenlos!)
+      if (message.text === '/anruf' || message.text === '/call' || message.text.toLowerCase().includes('ruf mich an')) {
+        await sendChatAction(chatId, 'record_voice')
+        await sendVoiceResponse(chatId, 'Hallo! Ich bin MOI, dein persönlicher Assistent. Schick mir jetzt eine Sprachnachricht und ich antworte dir sofort mit meiner Stimme. Frag mich alles was du wissen willst!')
+        await sendMessage(chatId, `📞 *Voice-Chat aktiv!*
+
+🎤 Schick mir eine Sprachnachricht
+🔊 Ich antworte mit Sprache
+
+_Wie telefonieren - nur kostenlos!_
+
+💡 Tipp: Halte den Mikrofon-Button gedrückt und sprich!`)
         return NextResponse.json({ ok: true })
       }
 
