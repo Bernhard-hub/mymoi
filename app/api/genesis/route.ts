@@ -5,74 +5,74 @@ import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
-// Alle verfügbaren Tools für MOI
+// Tools - perfektioniert für exakte Erkennung
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'generate_image',
-    description: 'Generiert ein Bild mit AI. Nutze für: Bilder, Logos, Designs, Illustrationen, Fotos, Kunstwerke.',
+    description: 'Bild erstellen. Trigger: zeig, erstelle, generiere, mal, Bild, Foto, Logo, Design, zeichne, visualisiere',
     input_schema: {
       type: 'object' as const,
       properties: {
-        prompt: { type: 'string', description: 'Detaillierte Bildbeschreibung auf Englisch' },
-        style: { type: 'string', description: 'Stil: photo, illustration, logo, art, 3d' }
+        prompt: { type: 'string', description: 'ENGLISCH! Detailliert: Subjekt, Stil, Licht, Farben, Stimmung. Beispiel: "Golden retriever puppy in autumn leaves, warm sunlight, photorealistic, 8k"' },
+        style: { type: 'string', description: 'photo/illustration/logo/art/3d' }
       },
       required: ['prompt']
     }
   },
   {
-    name: 'generate_qrcode',
-    description: 'Generiert einen QR-Code für URLs, Text, Kontaktdaten.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        content: { type: 'string', description: 'Inhalt des QR-Codes (URL, Text, etc.)' },
-        size: { type: 'number', description: 'Größe in Pixel (100-500)' }
-      },
-      required: ['content']
-    }
-  },
-  {
-    name: 'web_search',
-    description: 'Sucht aktuelle Informationen im Internet. Nutze für: Nachrichten, Fakten, aktuelle Events.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        query: { type: 'string', description: 'Suchanfrage' }
-      },
-      required: ['query']
-    }
-  },
-  {
     name: 'get_weather',
-    description: 'Holt aktuelle Wetterdaten für eine Stadt.',
+    description: 'Wetter abrufen. Trigger: Wetter, Temperatur, Grad, warm, kalt, regnet, sonnig, Jacke, Schirm',
     input_schema: {
       type: 'object' as const,
       properties: {
-        city: { type: 'string', description: 'Stadt für Wetterabfrage' }
+        city: { type: 'string', description: 'Stadtname' }
       },
       required: ['city']
     }
   },
   {
     name: 'calculate',
-    description: 'Führt mathematische Berechnungen durch.',
+    description: 'Rechnen. Trigger: rechne, berechne, wieviel, Prozent, plus, minus, mal, geteilt, Summe, Ergebnis',
     input_schema: {
       type: 'object' as const,
       properties: {
-        expression: { type: 'string', description: 'Mathematischer Ausdruck (z.B. "15% von 250" oder "2+2*3")' }
+        expression: { type: 'string', description: 'Exakt wie gesagt: "15% von 250" oder "47+89"' }
       },
       required: ['expression']
     }
   },
   {
     name: 'get_time',
-    description: 'Gibt aktuelle Zeit und Datum zurück, optional für eine Zeitzone.',
+    description: 'Zeit/Datum. Trigger: Uhrzeit, wie spät, Datum, welcher Tag, heute',
     input_schema: {
       type: 'object' as const,
       properties: {
-        timezone: { type: 'string', description: 'Zeitzone (z.B. Europe/Vienna, America/New_York)' }
+        timezone: { type: 'string', description: 'Default: Europe/Berlin' }
       },
       required: []
+    }
+  },
+  {
+    name: 'generate_qrcode',
+    description: 'QR-Code erstellen. Trigger: QR, Code, scannen, Link teilen',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        content: { type: 'string', description: 'URL oder Text' },
+        size: { type: 'number', description: '100-500px' }
+      },
+      required: ['content']
+    }
+  },
+  {
+    name: 'web_search',
+    description: 'Web-Suche. Trigger: suche, finde, was ist, wer ist, aktuell, news, Definition',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Suchbegriff' }
+      },
+      required: ['query']
     }
   }
 ]
@@ -185,16 +185,40 @@ async function executeTool(name: string, input: Record<string, unknown>): Promis
   }
 }
 
-const GENESIS_PROMPT = `Du bist MOI, ein eigenständiger KI-Assistent. Du bist MOI - NICHT Claude, NICHT ein Bot.
+const GENESIS_PROMPT = `Du bist MOI, ein hilfreicher deutschsprachiger Assistent der HANDELT statt nur zu reden.
 
-WICHTIG:
-- Antworte IMMER auf Deutsch, kurz und prägnant (max 2-3 Sätze)
-- Nutze Tools wenn passend: Bild generieren, QR-Code, Wetter, Rechnen, Zeit
-- Sei freundlich, hilfreich und direkt
-- Bei Bildanfragen: Erstelle einen detaillierten englischen Prompt
-- Bei Rechenanfragen: Nutze das calculate Tool
-- Bei Wetteranfragen: Nutze get_weather
-- Bei Zeitfragen: Nutze get_time`
+KERNPRINZIP: Verstehe was der User WIRKLICH will und liefere es SOFORT.
+
+TOOL-NUTZUNG - IMMER wenn passend:
+• "Bild/Foto/Logo/Design/zeig mir/erstelle/generiere/mal" → generate_image (englischer Prompt!)
+• "Wetter/Temperatur/regnet/sonnig" + Ort → get_weather
+• "QR/Code/Link" → generate_qrcode
+• "rechne/berechne/prozent/plus/minus/mal/geteilt/wieviel" → calculate
+• "Zeit/Uhrzeit/Datum/welcher Tag" → get_time
+• "suche/finde/was ist/wer ist/aktuell/news" → web_search
+
+ANTWORT-REGELN:
+1. Kurz und direkt - max 2 Sätze
+2. Keine Erklärungen was du tust - TU ES EINFACH
+3. Antworte auf Deutsch
+4. Bei Bildern: Erstelle detaillierten englischen Prompt mit Stil, Farben, Details
+5. Bei Wetter ohne Stadt: Frag nach der Stadt
+6. Bei Rechnung: Zeige Ergebnis klar
+
+BEISPIELE:
+User: "Zeig mir einen Sonnenuntergang am Meer"
+→ Nutze generate_image mit: "Beautiful sunset over calm ocean, golden hour lighting, silhouette of palm trees, vibrant orange and purple sky, photorealistic"
+
+User: "Wie wird das Wetter in Wien?"
+→ Nutze get_weather mit city: "Wien"
+
+User: "Was ist 15% von 250?"
+→ Nutze calculate mit: "15% von 250"
+
+User: "Erstelle einen QR Code für meine Website example.com"
+→ Nutze generate_qrcode mit content: "https://example.com"
+
+WICHTIG: Du bist MOI, nicht Claude. Sei hilfreich, schnell, und liefere Ergebnisse.`
 
 async function processWithTools(msg: string): Promise<{ text: string; tools: { name: string; data?: unknown }[] }> {
   let resp = await anthropic.messages.create({
