@@ -1196,6 +1196,7 @@ _Bitte warten..._`)
               successMessage += `Facebook: ${result.shareLinks.facebook}\n\n`
               successMessage += `Reddit: ${result.shareLinks.reddit}\n\n`
               successMessage += `Instagram: ${result.shareLinks.instagram}\n\n`
+              successMessage += `TikTok: ${result.shareLinks.tiktok}\n\n`
               successMessage += `_Eingeloggt = KEIN Captcha!_`
             }
 

@@ -907,6 +907,7 @@ export interface ShareLinks {
   facebook: string
   reddit: string
   instagram: string
+  tiktok: string
   video?: string
 }
 
@@ -930,6 +931,7 @@ EVIDENRA analysiert Interviews, Fokusgruppen & Dokumente automatisch - bis zu 10
     facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(urlToShare)}&quote=${encodeURIComponent(facebookQuote)}`,
     reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(urlToShare)}&title=${encodeURIComponent(redditTitle)}`,
     instagram: 'https://www.instagram.com/evidenra/',
+    tiktok: 'https://www.tiktok.com/@evidenra',
     video: videoUrl
   }
 }
