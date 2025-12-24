@@ -912,15 +912,23 @@ export interface ShareLinks {
 
 export function generateShareLinks(url?: string, title?: string, videoUrl?: string): ShareLinks {
   const shareUrl = url || CONFIG.shareUrl
-  const shareTitle = title || 'EVIDENRA - 60% Founding Members Rabatt'
-
-  // Wenn Video-URL vorhanden, diese teilen
   const urlToShare = videoUrl || shareUrl
+
+  // Plattform-spezifische Texte
+  const linkedinText = `🎬 AI revolutioniert qualitative Forschung!
+
+EVIDENRA analysiert Interviews, Fokusgruppen & Dokumente automatisch - bis zu 10x schneller als manuelle Methoden.
+
+⏰ Jetzt 60% Founding Members Rabatt sichern!`
+
+  const redditTitle = 'EVIDENRA - AI for Qualitative Research (60% Founding Members Discount)'
+
+  const facebookQuote = 'AI-powered qualitative research analysis. Transform interviews, focus groups & documents into insights 10x faster.'
 
   return {
     linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(urlToShare)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(urlToShare)}`,
-    reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(urlToShare)}&title=${encodeURIComponent(shareTitle)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(urlToShare)}&quote=${encodeURIComponent(facebookQuote)}`,
+    reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(urlToShare)}&title=${encodeURIComponent(redditTitle)}`,
     instagram: 'https://www.instagram.com/evidenra/',
     video: videoUrl
   }
@@ -1013,8 +1021,11 @@ Try free: evidenra.com
       result.youtube = { success: false, error: ytErr?.message || 'YouTube Upload fehlgeschlagen' }
     }
 
-    // Step 5: Generate share links (MIT Video-URL)
-    result.shareLinks = generateShareLinks('https://evidenra.com/pricing', 'EVIDENRA - 60% OFF', videoUrl)
+    // Step 5: Generate share links (YouTube URL bevorzugt, sonst Supabase)
+    const shareVideoUrl = result.youtube?.success && result.youtube?.url
+      ? result.youtube.url
+      : videoUrl
+    result.shareLinks = generateShareLinks('https://evidenra.com/pricing', 'EVIDENRA - 60% OFF', shareVideoUrl)
 
     result.success = true // Video gefunden = Erfolg
 
