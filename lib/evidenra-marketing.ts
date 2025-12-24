@@ -459,8 +459,89 @@ export async function postToTwitter(text: string, mediaId?: string): Promise<Twi
 
 export function findLatestVideo(): string | undefined {
   // Cloud-Modus: Keine lokalen Dateien verfuegbar
-  // Videos werden direkt von HeyGen erstellt
+  // Videos werden aus Supabase Storage geladen
   return undefined
+}
+
+// ============================================================================
+// SUPABASE CLOUD VIDEO FUNCTIONS
+// ============================================================================
+
+export async function getLatestCloudVideo(): Promise<{ url: string; filename: string } | null> {
+  const supabaseUrl = process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co'
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+
+  if (!supabaseKey) {
+    return null
+  }
+
+  return new Promise((resolve) => {
+    const url = new URL(`${supabaseUrl}/rest/v1/cloud_videos?is_latest=eq.true&select=url,filename&limit=1`)
+
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'apikey': supabaseKey
+      }
+    }, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data)
+          if (result && result.length > 0) {
+            resolve({ url: result[0].url, filename: result[0].filename })
+          } else {
+            resolve(null)
+          }
+        } catch {
+          resolve(null)
+        }
+      })
+    })
+
+    req.on('error', () => resolve(null))
+    req.end()
+  })
+}
+
+export async function listCloudVideos(): Promise<Array<{ url: string; filename: string; created_at: string }>> {
+  const supabaseUrl = process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co'
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+
+  if (!supabaseKey) {
+    return []
+  }
+
+  return new Promise((resolve) => {
+    const url = new URL(`${supabaseUrl}/rest/v1/cloud_videos?select=url,filename,created_at&order=created_at.desc&limit=10`)
+
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${supabaseKey}`,
+        'apikey': supabaseKey
+      }
+    }, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data) || [])
+        } catch {
+          resolve([])
+        }
+      })
+    })
+
+    req.on('error', () => resolve([]))
+    req.end()
+  })
 }
 
 // ============================================================================
@@ -700,23 +781,35 @@ export async function runFullAutomation(options: {
   const result: AutomationResult = { success: false }
 
   try {
-    // Step 1: Create HeyGen Cloud Video
-    const topic = options.topic || 'founding'
-    const heygenResult = await createHeyGenCloudVideo(topic)
+    let videoUrl: string | null = null
 
-    if (!heygenResult.success || !heygenResult.videoId) {
-      return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
+    // Step 1: Zuerst Cloud-Video suchen (vom PC hochgeladen)
+    const cloudVideo = await getLatestCloudVideo()
+    if (cloudVideo) {
+      console.log('[Werbung] Cloud-Video gefunden:', cloudVideo.filename)
+      videoUrl = cloudVideo.url
     }
 
-    // Step 2: Wait for HeyGen video to be ready
-    const videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
+    // Step 2: Wenn kein Cloud-Video, HeyGen erstellen
     if (!videoUrl) {
-      return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
+      console.log('[Werbung] Kein Cloud-Video, erstelle HeyGen Video...')
+      const topic = options.topic || 'founding'
+      const heygenResult = await createHeyGenCloudVideo(topic)
+
+      if (!heygenResult.success || !heygenResult.videoId) {
+        return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
+      }
+
+      // Wait for HeyGen video to be ready
+      videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
+      if (!videoUrl) {
+        return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
+      }
     }
 
     result.video = { path: videoUrl }
 
-    // Step 3: Post to Twitter (mit Video-URL als Text, da Cloud-Upload kompliziert)
+    // Step 3: Post to Twitter
     const tweetText = `🚀 EVIDENRA - AI-Powered Qualitative Research
 
 60% OFF for Founding Members!
@@ -735,10 +828,10 @@ Try free: evidenra.com
     result.shareLinks = generateShareLinks('https://evidenra.com/pricing')
     result.shareLinks = {
       ...result.shareLinks,
-      video: videoUrl  // HeyGen Video URL
+      video: videoUrl
     } as any
 
-    result.youtube = { success: false, error: 'Cloud-Modus: Manueller YouTube-Upload mit Video-URL' }
+    result.youtube = { success: false, error: `Video-URL: ${videoUrl}` }
 
     result.success = result.twitter?.success ?? false
 
