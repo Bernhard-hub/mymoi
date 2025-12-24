@@ -755,14 +755,18 @@ export interface HeyGenVideoResult {
 const GENESIS_CLOUD_URL = 'https://genesis-cloud-production.up.railway.app'
 const GENESIS_API_KEY = process.env.GENESIS_API_KEY || 'evidenra-genesis-2024-secure'
 
-export async function createVideoViaGenesisCloud(topic: string = 'founding'): Promise<HeyGenVideoResult> {
-  console.log('[Genesis Cloud] Starte Video-Erstellung via Railway...')
+export async function createVideoViaGenesisCloud(topic: string = 'founding', fullMode: boolean = true): Promise<HeyGenVideoResult> {
+  // fullMode = true: Screen Recording + Avatar + FFmpeg Composite
+  // fullMode = false: Nur HeyGen Avatar
+  const endpoint = fullMode ? '/create-full-video' : '/create-video'
+  console.log(`[Genesis Cloud] Starte Video-Erstellung via Railway (${fullMode ? 'FULL' : 'avatar-only'})...`)
 
   return new Promise((resolve) => {
-    const url = new URL(`${GENESIS_CLOUD_URL}/create-video`)
+    const url = new URL(`${GENESIS_CLOUD_URL}${endpoint}`)
 
     const payload = JSON.stringify({
       topic,
+      demoType: 'demo',
       waitForCompletion: true
     })
 
