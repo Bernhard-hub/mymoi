@@ -747,7 +747,59 @@ export interface HeyGenVideoResult {
   success: boolean
   videoId?: string
   videoUrl?: string
+  supabaseUrl?: string
   error?: string
+}
+
+// Genesis Cloud API - Railway-hosted video generation service
+const GENESIS_CLOUD_URL = 'https://genesis-cloud-production.up.railway.app'
+const GENESIS_API_KEY = process.env.GENESIS_API_KEY || 'evidenra-genesis-2024-secure'
+
+export async function createVideoViaGenesisCloud(topic: string = 'founding'): Promise<HeyGenVideoResult> {
+  console.log('[Genesis Cloud] Starte Video-Erstellung via Railway...')
+
+  return new Promise((resolve) => {
+    const url = new URL(`${GENESIS_CLOUD_URL}/create-video`)
+
+    const payload = JSON.stringify({
+      topic,
+      waitForCompletion: true
+    })
+
+    const req = https.request({
+      hostname: url.hostname,
+      path: url.pathname,
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GENESIS_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }, (res) => {
+      let data = ''
+      res.on('data', chunk => data += chunk)
+      res.on('end', () => {
+        try {
+          const result = JSON.parse(data)
+          console.log('[Genesis Cloud] Antwort:', result.success ? 'OK' : result.error)
+          if (result.success) {
+            resolve({
+              success: true,
+              videoId: result.videoId,
+              videoUrl: result.heygenUrl,
+              supabaseUrl: result.supabaseUrl
+            })
+          } else {
+            resolve({ success: false, error: result.error || 'Genesis Cloud Fehler' })
+          }
+        } catch (e: any) {
+          resolve({ success: false, error: e.message })
+        }
+      })
+    })
+    req.on('error', (e) => resolve({ success: false, error: e.message }))
+    req.write(payload)
+    req.end()
+  })
 }
 
 export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS = 'founding'): Promise<HeyGenVideoResult> {
@@ -962,20 +1014,18 @@ export async function runFullAutomation(options: {
 
     // Step 1: Neues Video erstellen ODER existierendes Cloud-Video nutzen
     if (options.createNewVideo) {
-      // Option A: Immer neues HeyGen Video erstellen
-      console.log('[Werbung] Erstelle NEUES HeyGen Video (createNewVideo=true)...')
+      // Option A: NEUES Video via Genesis Cloud (Railway)
+      console.log('[Werbung] Erstelle NEUES Video via Genesis Cloud...')
       const topic = options.topic || 'founding'
-      const heygenResult = await createHeyGenCloudVideo(topic)
+      const genesisResult = await createVideoViaGenesisCloud(topic)
 
-      if (!heygenResult.success || !heygenResult.videoId) {
-        return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
+      if (!genesisResult.success) {
+        return { success: false, error: genesisResult.error || 'Genesis Cloud Video-Erstellung fehlgeschlagen' }
       }
 
-      console.log('[Werbung] HeyGen Video gestartet:', heygenResult.videoId)
-      videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
-      if (!videoUrl) {
-        return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
-      }
+      // Genesis Cloud liefert bereits die Supabase URL
+      videoUrl = genesisResult.supabaseUrl || genesisResult.videoUrl || null
+      console.log('[Werbung] Genesis Cloud Video erstellt:', videoUrl)
     } else {
       // Option B: Zuerst Cloud-Video suchen
       console.log('[Werbung] Suche Cloud-Video...')
@@ -991,21 +1041,18 @@ export async function runFullAutomation(options: {
         console.log('[Werbung] Cloud-Video Fehler:', cloudErr?.message || cloudErr)
       }
 
-      // Wenn kein Cloud-Video, HeyGen erstellen
+      // Wenn kein Cloud-Video, Genesis Cloud erstellen
       if (!videoUrl) {
-        console.log('[Werbung] Erstelle HeyGen Video...')
+        console.log('[Werbung] Erstelle Video via Genesis Cloud...')
         const topic = options.topic || 'founding'
-        const heygenResult = await createHeyGenCloudVideo(topic)
+        const genesisResult = await createVideoViaGenesisCloud(topic)
 
-        if (!heygenResult.success || !heygenResult.videoId) {
-          return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
+        if (!genesisResult.success) {
+          return { success: false, error: genesisResult.error || 'Genesis Cloud Video-Erstellung fehlgeschlagen' }
         }
 
-        console.log('[Werbung] HeyGen Video gestartet:', heygenResult.videoId)
-        videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
-        if (!videoUrl) {
-          return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
-        }
+        videoUrl = genesisResult.supabaseUrl || genesisResult.videoUrl || null
+        console.log('[Werbung] Genesis Cloud Video erstellt:', videoUrl)
       }
     }
 
