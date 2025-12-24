@@ -1159,18 +1159,19 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
       // EVIDENRA MARKETING COMMANDS
       // ============================================
 
-      // /werbung - Full Marketing Automation
-      // /werbung neu - Neues HeyGen Video erstellen
+      // /werbung - IMMER neues HeyGen Video erstellen
+      // /werbung schnell - Bestehendes Cloud-Video nutzen (schneller)
       const isWerbungCommand = message.text === '/werbung' || message.text.toLowerCase().includes('werbung posten')
-      const isWerbungNeu = message.text?.toLowerCase().includes('/werbung neu') || message.text?.toLowerCase().includes('neues werbevideo')
+      const isWerbungSchnell = message.text?.toLowerCase().includes('/werbung schnell') || message.text?.toLowerCase().includes('schnell posten')
 
-      if (isWerbungCommand || isWerbungNeu) {
+      if (isWerbungCommand || isWerbungSchnell) {
         await sendChatAction(chatId, 'typing')
 
-        const createNew = isWerbungNeu
+        // Standard: IMMER neues Video, nur bei "schnell" bestehendes nutzen
+        const createNew = !isWerbungSchnell
         const statusText = createNew
-          ? `🎬 *NEUES Video wird erstellt...*\n\n_HeyGen AI Avatar generiert neues Video (ca. 2-5 Min)_`
-          : `🚀 *EVIDENRA Werbung Pipeline startet...*\n\n1️⃣ Video suchen/erstellen\n2️⃣ YouTube Upload\n3️⃣ Twitter Post\n4️⃣ Share-Links generieren\n\n_Bitte warten..._`
+          ? `🎬 *NEUES HeyGen Video wird erstellt...*\n\n_AI Avatar generiert frisches Video (ca. 2-5 Min)_\n\n1️⃣ HeyGen Video\n2️⃣ YouTube Upload\n3️⃣ Twitter Post\n4️⃣ Share-Links`
+          : `🚀 *Schnell-Modus: Bestehendes Video...*\n\n_Nutze letztes Cloud-Video_`
 
         await sendMessage(chatId, statusText)
 
