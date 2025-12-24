@@ -960,23 +960,10 @@ export async function runFullAutomation(options: {
   try {
     let videoUrl: string | null = null
 
-    // Step 1: Zuerst Cloud-Video suchen (vom PC hochgeladen)
-    console.log('[Werbung] Suche Cloud-Video...')
-    try {
-      const cloudVideo = await getLatestCloudVideo()
-      if (cloudVideo) {
-        console.log('[Werbung] Cloud-Video gefunden:', cloudVideo.filename)
-        videoUrl = cloudVideo.url
-      } else {
-        console.log('[Werbung] Kein Cloud-Video in Supabase gefunden')
-      }
-    } catch (cloudErr: any) {
-      console.log('[Werbung] Cloud-Video Fehler:', cloudErr?.message || cloudErr)
-    }
-
-    // Step 2: Wenn kein Cloud-Video, HeyGen erstellen
-    if (!videoUrl) {
-      console.log('[Werbung] Erstelle HeyGen Video...')
+    // Step 1: Neues Video erstellen ODER existierendes Cloud-Video nutzen
+    if (options.createNewVideo) {
+      // Option A: Immer neues HeyGen Video erstellen
+      console.log('[Werbung] Erstelle NEUES HeyGen Video (createNewVideo=true)...')
       const topic = options.topic || 'founding'
       const heygenResult = await createHeyGenCloudVideo(topic)
 
@@ -985,11 +972,40 @@ export async function runFullAutomation(options: {
       }
 
       console.log('[Werbung] HeyGen Video gestartet:', heygenResult.videoId)
-
-      // Wait for HeyGen video to be ready
       videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
       if (!videoUrl) {
         return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
+      }
+    } else {
+      // Option B: Zuerst Cloud-Video suchen
+      console.log('[Werbung] Suche Cloud-Video...')
+      try {
+        const cloudVideo = await getLatestCloudVideo()
+        if (cloudVideo) {
+          console.log('[Werbung] Cloud-Video gefunden:', cloudVideo.filename)
+          videoUrl = cloudVideo.url
+        } else {
+          console.log('[Werbung] Kein Cloud-Video in Supabase gefunden')
+        }
+      } catch (cloudErr: any) {
+        console.log('[Werbung] Cloud-Video Fehler:', cloudErr?.message || cloudErr)
+      }
+
+      // Wenn kein Cloud-Video, HeyGen erstellen
+      if (!videoUrl) {
+        console.log('[Werbung] Erstelle HeyGen Video...')
+        const topic = options.topic || 'founding'
+        const heygenResult = await createHeyGenCloudVideo(topic)
+
+        if (!heygenResult.success || !heygenResult.videoId) {
+          return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
+        }
+
+        console.log('[Werbung] HeyGen Video gestartet:', heygenResult.videoId)
+        videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
+        if (!videoUrl) {
+          return { success: false, error: 'HeyGen Video-Verarbeitung fehlgeschlagen oder Timeout' }
+        }
       }
     }
 

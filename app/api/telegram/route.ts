@@ -1160,20 +1160,23 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
       // ============================================
 
       // /werbung - Full Marketing Automation
-      if (message.text === '/werbung' || message.text.toLowerCase().includes('werbung posten')) {
+      // /werbung neu - Neues HeyGen Video erstellen
+      const isWerbungCommand = message.text === '/werbung' || message.text.toLowerCase().includes('werbung posten')
+      const isWerbungNeu = message.text?.toLowerCase().includes('/werbung neu') || message.text?.toLowerCase().includes('neues werbevideo')
+
+      if (isWerbungCommand || isWerbungNeu) {
         await sendChatAction(chatId, 'typing')
-        await sendMessage(chatId, `🚀 *EVIDENRA Werbung Pipeline startet...*
 
-1️⃣ Video suchen/erstellen
-2️⃣ YouTube Upload
-3️⃣ Twitter Post
-4️⃣ Share-Links generieren
+        const createNew = isWerbungNeu
+        const statusText = createNew
+          ? `🎬 *NEUES Video wird erstellt...*\n\n_HeyGen AI Avatar generiert neues Video (ca. 2-5 Min)_`
+          : `🚀 *EVIDENRA Werbung Pipeline startet...*\n\n1️⃣ Video suchen/erstellen\n2️⃣ YouTube Upload\n3️⃣ Twitter Post\n4️⃣ Share-Links generieren\n\n_Bitte warten..._`
 
-_Bitte warten..._`)
+        await sendMessage(chatId, statusText)
 
         try {
           const { runFullAutomation, generateShareLinks } = await import('@/lib/evidenra-marketing')
-          const result = await runFullAutomation()
+          const result = await runFullAutomation({ createNewVideo: createNew })
 
           if (result.success) {
             let successMessage = `✅ *EVIDENRA Werbung gepostet!*\n\n`
