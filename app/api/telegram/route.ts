@@ -69,12 +69,87 @@ async function sendDocumentBuffer(chatId: number, fileBuffer: Buffer, fileName: 
   return response.json()
 }
 
-async function sendChatAction(chatId: number, action: 'typing' | 'upload_document' | 'record_voice') {
+async function sendChatAction(chatId: number, action: 'typing' | 'upload_document' | 'record_voice' | 'upload_video') {
   await fetch(`${TELEGRAM_API}/sendChatAction`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, action })
   })
+}
+
+// Video per URL senden (fuer Cloud-Videos)
+async function sendVideo(chatId: number, videoUrl: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API}/sendVideo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      video: videoUrl,
+      caption,
+      parse_mode: 'Markdown',
+      supports_streaming: true
+    })
+  })
+  return response.json()
+}
+
+// Nachricht mit Inline Buttons senden (callback_data ODER url)
+async function sendMessageWithButtons(
+  chatId: number,
+  text: string,
+  buttons: Array<Array<{ text: string; callback_data?: string; url?: string }>>
+) {
+  const response = await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: 'Markdown',
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    })
+  })
+  return response.json()
+}
+
+// Answer Callback Query (für Button-Klicks)
+async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+  await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      callback_query_id: callbackQueryId,
+      text: text || ''
+    })
+  })
+}
+
+// Pending Discord Channel speichern (für mehrstufigen Flow)
+const pendingDiscordChannels = new Map<number, string>()
+
+// Pending AI Announcements (für Post-Buttons)
+const pendingAnnouncements = new Map<number, string>()
+
+// Pending Founding Member Input
+const pendingFoundingInput = new Map<number, 'add' | 'set'>()
+
+// Pending Outreach Input
+const pendingOutreachInput = new Map<number, { type: 'intro' | 'add_server' | 'update_status', data?: any }>()
+
+async function savePendingDiscordChannel(userId: number, channel: string) {
+  pendingDiscordChannels.set(userId, channel)
+  // Auto-expire nach 5 Minuten
+  setTimeout(() => pendingDiscordChannels.delete(userId), 5 * 60 * 1000)
+}
+
+function getPendingDiscordChannel(userId: number): string | undefined {
+  return pendingDiscordChannels.get(userId)
+}
+
+function clearPendingDiscordChannel(userId: number) {
+  pendingDiscordChannels.delete(userId)
 }
 
 // Text-to-Speech - Hochwertige deutsche Stimme
@@ -177,7 +252,7 @@ async function transcribeVoice(fileId: string): Promise<string> {
 // ============================================
 // INTENT DETECTION - Was will der User?
 // ============================================
-function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'email' | 'asset', query: string } {
+function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'news' | 'maps' | 'buy' | 'phone' | 'whatsapp' | 'sms' | 'pdf' | 'ics' | 'email' | 'asset' | 'voiceover' | 'avatar', query: string } {
   const lower = text.toLowerCase().trim()
 
   // KAUFEN - MUSS VOR ALLEM ANDEREN KOMMEN (weil "buy" sonst als "such" erkannt wird)
@@ -236,6 +311,85 @@ function detectIntent(text: string): { type: 'youtube' | 'web' | 'weather' | 'ne
   // SMS senden
   if (lower.includes('sms') || lower.includes('nachricht senden') || lower.includes('textnachricht')) {
     return { type: 'sms', query: text.replace(/sms|nachricht senden|textnachricht/gi, '').trim() }
+  }
+
+  // WERBUNG AUTOMATION - Kompletter Workflow mit Video, YouTube, Twitter
+  // Viele Trigger-Phrasen für bessere Erkennung (Bot Training)
+  const werbungTriggers = [
+    // Direkte Werbung-Befehle
+    'werbung', 'werbespot', 'werbevideo', 'werbe clip', 'promo', 'promotion',
+    // Marketing-bezogen
+    'marketing video', 'marketing clip', 'marketing erstellen',
+    // EVIDENRA-spezifisch
+    'evidenra video', 'evidenra werbung', 'evidenra promo', 'evidenra clip',
+    // Genesis Engine
+    'genesis video', 'genesis engine', 'neues video erstellen',
+    // Aktionen
+    'posten', 'teilen', 'veröffentlichen', 'publishen', 'publizieren',
+    // Social Media Workflow
+    'youtube hochladen', 'auf youtube', 'twitter posten', 'social media',
+    // Kombinationen
+    'video über', 'clip über', 'spot über'
+  ]
+
+  const hasWerbungTrigger = werbungTriggers.some(t => lower.includes(t))
+  const hasVideoContext = lower.includes('video') || lower.includes('clip') || lower.includes('spot')
+  const hasTopicIndicator = lower.includes('über') || lower.includes('zu') || lower.includes('thema')
+
+  if (hasWerbungTrigger || (hasVideoContext && hasTopicIndicator && lower.includes('evidenra'))) {
+    // Thema extrahieren
+    let topic = text
+    const extractTriggers = [
+      'werbung mit video über', 'werbung über', 'werbung posten über', 'marketing video über',
+      'werbe video über', 'werbung mit video', 'marketing video', 'werbung posten', 'werbung erstellen',
+      'video über', 'clip über', 'spot über', 'promo über', 'promo zu', 'video zu',
+      'evidenra video über', 'evidenra werbung', 'genesis video', 'neues video'
+    ]
+    for (const trigger of extractTriggers) {
+      const idx = lower.indexOf(trigger)
+      if (idx !== -1) {
+        topic = text.substring(idx + trigger.length).trim()
+        topic = topic.replace(/^[.:,!\s]+/, '').trim()
+        break
+      }
+    }
+    return { type: 'werbung' as any, query: topic || 'EVIDENRA qualitative Forschung' }
+  }
+
+  // AVATAR VIDEO (HeyGen) - MUSS VOR YouTube kommen weil "video" sonst YouTube triggert!
+  if (lower.includes('avatar') || lower.includes('heygen') ||
+      (lower.includes('video') && (lower.includes('mach ein') || lower.includes('erstell') || lower.includes('generier'))) ||
+      lower.includes('sprechendes video') || lower.includes('avatar video')) {
+    // Extrahiere das Script (alles nach dem Trigger-Wort)
+    let script = text
+    const triggers = ['avatar video', 'avatar', 'heygen', 'mach ein video', 'erstell ein video', 'generier ein video', 'sprechendes video']
+    for (const trigger of triggers) {
+      const idx = lower.indexOf(trigger)
+      if (idx !== -1) {
+        script = text.substring(idx + trigger.length).trim()
+        // Entferne führende Satzzeichen
+        script = script.replace(/^[.:,!\s]+/, '').trim()
+        break
+      }
+    }
+    return { type: 'avatar', query: script || text }
+  }
+
+  // VOICEOVER (ElevenLabs TTS)
+  if (lower.includes('voiceover') || lower.includes('tts') || lower.includes('sprich') ||
+      lower.includes('vorlesen') || lower.includes('stimme') || lower.includes('audio erstellen') ||
+      lower.includes('sag') && (lower.includes('text') || lower.includes('mir'))) {
+    let script = text
+    const triggers = ['voiceover', 'tts', 'sprich', 'vorlesen', 'lies vor', 'audio erstellen', 'sag mir', 'sag den text']
+    for (const trigger of triggers) {
+      const idx = lower.indexOf(trigger)
+      if (idx !== -1) {
+        script = text.substring(idx + trigger.length).trim()
+        script = script.replace(/^[.:,!\s]+/, '').trim()
+        break
+      }
+    }
+    return { type: 'voiceover', query: script || text }
   }
 
   // YouTube
@@ -302,18 +456,28 @@ const ASSET_EMOJIS: Record<string, string> = {
 // ============================================
 const WELCOME_MESSAGE = `Hey! 👋
 
-Ich bin *MOI* - der AI-Assistent der HANDELT!
+Ich bin *MOI* - dein AI-Assistent der HANDELT!
+
+🚀 *EVIDENRA Marketing:*
+/werbung - Video → YouTube → Twitter → Share
+/video - Neues Video erstellen
+/youtube - YouTube Upload
+/twitter - Twitter Post
+/share - Share-Links
+Oder einfach: "werbung posten"
+
+🎮 *Discord Multi-Channel:*
+\`#announcements Nachricht\`
+→ Postet als "Andi | EVIDENRA Support"
 
 🔗 *Chain Actions:*
 "Erstell Angebot und schick per Mail"
-→ Mehrere Aktionen in einem!
 
 📱 *App Integrationen:*
-Notion, Trello, Todoist, Discord, Slack, GitHub...
-→ "Speicher in Notion: Meine Idee"
+Notion, Trello, Todoist, Slack, GitHub...
 
 📊 *200+ AI Assets:*
-Präsentationen, E-Mails, Websites...
+Praesentationen, E-Mails, Websites...
 
 🌐 *Live-Daten:*
 YouTube, Wetter, News, Maps
@@ -323,10 +487,17 @@ PDF, PowerPoint, Kalender (.ics)
 
 📧 *E-Mail direkt:*
 "max@firma.de Treffen morgen um 10"
-→ Sofort gesendet!
+
+🎤 *Voice & Video:*
+/voiceover - ElevenLabs Stimme
+/avatar - HeyGen Avatar Video
+/voices - Alle Stimmen
+Sprachnachricht = Voice Command!
 
 💳 /buy - Credits
-📜 /history - Gespräche
+📜 /history - Gespraeche
+🎮 /discord - Discord Channels
+📊 /mstatus - Marketing Status
 
 🧠 _Ich erinnere mich!_
 
@@ -408,6 +579,277 @@ Viel Spaß mit MOI! 🚀`)
       if (data.startsWith('buy_')) {
         const packageId = data.replace('buy_', '')
         await sendInvoice(chatId, packageId)
+      }
+
+      // Discord Channel Buttons
+      if (data.startsWith('discord_')) {
+        const channelMap: Record<string, string> = {
+          'discord_announcements': 'announcements',
+          'discord_support': 'help-and-support',
+          'discord_founding': 'founding-lounge',
+          'discord_success': 'success-stories',
+          'discord_tutorials': 'tutorials',
+          'discord_welcome': 'welcome'
+        }
+
+        const channel = channelMap[data]
+        if (channel) {
+          const odataUserId = callbackQuery.from.id
+          await savePendingDiscordChannel(odataUserId, channel)
+          await sendMessage(chatId, `📝 *Nachricht für #${channel}*
+
+Schreib jetzt deine Nachricht (mit Emojis!):
+
+_Beispiel: 🎉 Neues Feature ist live!_`)
+        }
+      }
+
+      // AI Announcement Buttons
+      if (data.startsWith('ai_')) {
+        const aiUserId = callbackQuery.from.id
+
+        // Typ-Auswahl Buttons
+        if (data === 'ai_feature') {
+          await sendMessage(chatId, `🚀 *Neues Feature ankündigen*
+
+Beschreib das Feature kurz:
+_z.B. "Auto-Export für PDF und Word"_`)
+          pendingAnnouncements.set(aiUserId, 'pending_feature')
+        } else if (data === 'ai_maintenance') {
+          await sendMessage(chatId, `🔧 *Wartung ankündigen*
+
+Schreib Datum und Dauer:
+_z.B. "morgen 10-12 Uhr Server-Update"_`)
+          pendingAnnouncements.set(aiUserId, 'pending_maintenance')
+        } else if (data === 'ai_milestone') {
+          await sendMessage(chatId, `🏆 *Milestone ankündigen*
+
+Welchen Milestone?
+_z.B. "50 Founding Members erreicht"_`)
+          pendingAnnouncements.set(aiUserId, 'pending_milestone')
+        } else if (data === 'ai_general') {
+          await sendMessage(chatId, `📢 *Allgemeine Ankündigung*
+
+Was möchtest du ankündigen?`)
+          pendingAnnouncements.set(aiUserId, 'pending_general')
+        }
+
+        // Post Buttons - Ankündigung an Discord senden
+        if (data === 'ai_post_announcements' || data === 'ai_post_founding') {
+          const announcement = pendingAnnouncements.get(aiUserId)
+          if (announcement && !announcement.startsWith('pending_')) {
+            const channel = data === 'ai_post_founding' ? 'founding-lounge' : 'announcements'
+            const { sendToDiscordChannel } = await import('@/lib/app-integrations')
+            const result = await sendToDiscordChannel(channel, announcement)
+
+            if (result.success) {
+              await sendMessage(chatId, `✅ *Gepostet in #${result.channel}!*`)
+              pendingAnnouncements.delete(aiUserId)
+            } else {
+              await sendMessage(chatId, `❌ Fehler: ${result.error}`)
+            }
+          }
+        }
+
+        // Regenerate Button
+        if (data.startsWith('ai_regenerate_')) {
+          const topic = decodeURIComponent(data.replace('ai_regenerate_', ''))
+          await sendChatAction(chatId, 'typing')
+          const { generateAnnouncement } = await import('@/lib/discord-ai')
+          const announcement = await generateAnnouncement(topic)
+          pendingAnnouncements.set(aiUserId, announcement)
+
+          await sendMessageWithButtons(chatId, `🧠 *Neue Version:*
+
+${announcement}`, [
+            [
+              { text: '✅ So posten', callback_data: 'ai_post_announcements' },
+              { text: '🔄 Nochmal', callback_data: `ai_regenerate_${encodeURIComponent(topic)}` }
+            ]
+          ])
+        }
+      }
+
+      // Founding Member Buttons
+      if (data.startsWith('founding_')) {
+        const foundingUserId = callbackQuery.from.id
+
+        if (data === 'founding_add') {
+          const { incrementFoundingMember, formatFoundingMemberStats } = await import('@/lib/discord-ai')
+          const stats = await incrementFoundingMember()
+          await sendMessage(chatId, `✅ *+1 Founding Member!*
+
+${formatFoundingMemberStats(stats)}`)
+        } else if (data === 'founding_set') {
+          pendingFoundingInput.set(foundingUserId, 'set')
+          await sendMessage(chatId, `📝 *Founding Member Anzahl setzen*
+
+Schreib die aktuelle Anzahl (0-100):`)
+        } else if (data === 'founding_announce') {
+          const { getFoundingMemberStats, generateAnnouncement } = await import('@/lib/discord-ai')
+          const stats = await getFoundingMemberStats()
+
+          await sendChatAction(chatId, 'typing')
+          const announcement = await generateAnnouncement(
+            `Founding Member Update: ${stats.current} von ${stats.total} Plätzen vergeben, nur noch ${stats.remaining} verfügbar!`,
+            'urgent'
+          )
+
+          pendingAnnouncements.set(foundingUserId, announcement)
+
+          await sendMessageWithButtons(chatId, `🧠 *Generierte Ankündigung:*
+
+${announcement}`, [
+            [
+              { text: '📢 Posten', callback_data: 'ai_post_announcements' },
+              { text: '🔄 Neu', callback_data: 'founding_announce' }
+            ]
+          ])
+        }
+      }
+
+      // Outreach Buttons
+      if (data.startsWith('outreach_')) {
+        const outreachUserId = callbackQuery.from.id
+
+        if (data === 'outreach_find') {
+          await sendMessage(chatId, `🔍 *Server suchen*
+
+Gib einen Suchbegriff ein:
+_z.B. "qualitative Forschung" oder "Wien Studenten"_`)
+          pendingOutreachInput.set(outreachUserId, { type: 'add_server' })
+        } else if (data === 'outreach_list') {
+          const { getOutreachEntries, formatOutreachList } = await import('@/lib/discord-outreach')
+          const entries = await getOutreachEntries()
+          await sendMessage(chatId, `📋 *Outreach Liste*
+
+${formatOutreachList(entries)}`)
+        } else if (data === 'outreach_stats') {
+          const { getOutreachStats, formatOutreachStats } = await import('@/lib/discord-outreach')
+          const stats = await getOutreachStats()
+          await sendMessage(chatId, formatOutreachStats(stats))
+        } else if (data === 'outreach_report') {
+          await sendChatAction(chatId, 'typing')
+          const { generateWeeklyReport } = await import('@/lib/discord-outreach')
+          const report = await generateWeeklyReport()
+          await sendMessage(chatId, report)
+        } else if (data.startsWith('outreach_intro_')) {
+          const template = data.replace('outreach_intro_', '') as 'student' | 'researcher' | 'phd'
+          const pending = pendingOutreachInput.get(outreachUserId)
+          if (pending?.data?.serverName) {
+            await sendChatAction(chatId, 'typing')
+            const { generateQuickIntro, getInviteLink } = await import('@/lib/discord-outreach')
+            const intro = await generateQuickIntro(pending.data.serverName, template)
+            const joinLink = await getInviteLink(pending.data.serverName)
+
+            // Sende Intro als separaten Text zum einfachen Weiterleiten
+            await sendMessage(chatId, intro)
+
+            // Dann Buttons zum Öffnen von Discord
+            const buttons: Array<Array<{ text: string; url?: string; callback_data?: string }>> = []
+            if (joinLink) {
+              buttons.push([{ text: '🚀 Discord öffnen & posten', url: joinLink }])
+            }
+            buttons.push([{ text: '✅ Gepostet!', callback_data: `outreach_posted_${encodeURIComponent(pending.data.serverName)}` }])
+
+            await sendMessageWithButtons(chatId, `👆 *Intro bereit!*
+
+1. Tippe lange auf die Nachricht oben
+2. Wähle "Weiterleiten" oder "Kopieren"
+3. Öffne Discord und paste!`, buttons)
+
+            pendingOutreachInput.delete(outreachUserId)
+          }
+        } else if (data.startsWith('outreach_add_')) {
+          const serverName = decodeURIComponent(data.replace('outreach_add_', ''))
+          const { addOutreachEntry, getInviteLink, getServerSearchLinks } = await import('@/lib/discord-outreach')
+
+          // Zeige "Suche Invite..." Nachricht
+          await sendMessage(chatId, `🔍 *Suche Invite-Link für ${serverName}...*`)
+          await sendChatAction(chatId, 'typing')
+
+          // Versuche Invite-Link automatisch zu finden
+          const inviteLink = await getInviteLink(serverName)
+
+          await addOutreachEntry({
+            server_name: serverName,
+            status: 'discovered',
+            server_invite: inviteLink || undefined
+          })
+
+          if (inviteLink) {
+            // ERFOLG! Direkter Beitreten-Button
+            await sendMessageWithButtons(chatId, `✅ *${serverName}* gefunden!
+
+🔗 Invite-Link: ${inviteLink}
+
+Klick auf "Beitreten" - Discord öffnet sich automatisch!`, [
+              [
+                { text: '🚀 BEITRETEN', url: inviteLink }
+              ],
+              [
+                { text: '✅ Bin beigetreten!', callback_data: `outreach_joined_${encodeURIComponent(serverName)}` }
+              ]
+            ])
+          } else {
+            // Kein Link gefunden - zeige Suche
+            const searchLinks = getServerSearchLinks(serverName)
+            await sendMessageWithButtons(chatId, `✅ *${serverName}* zur Liste hinzugefügt!
+
+⚠️ Kein direkter Invite gefunden.
+
+Suche manuell auf Disboard:`, [
+              [
+                { text: '🔍 Auf Disboard suchen', url: searchLinks.disboard }
+              ],
+              [
+                { text: '✅ Bin beigetreten!', callback_data: `outreach_joined_${encodeURIComponent(serverName)}` }
+              ]
+            ])
+          }
+        } else if (data.startsWith('outreach_intro_for_')) {
+          const serverName = decodeURIComponent(data.replace('outreach_intro_for_', ''))
+          pendingOutreachInput.set(callbackQuery.from.id, { type: 'intro', data: { serverName } })
+
+          await sendMessageWithButtons(chatId, `📝 *Intro für:* ${serverName}
+
+Wähle den Stil:`, [
+            [
+              { text: '👨‍🎓 Student', callback_data: 'outreach_intro_student' },
+              { text: '🔬 Researcher', callback_data: 'outreach_intro_researcher' }
+            ],
+            [
+              { text: '🎓 PhD/Doktorand', callback_data: 'outreach_intro_phd' }
+            ]
+          ])
+        } else if (data.startsWith('outreach_join_')) {
+          const serverName = decodeURIComponent(data.replace('outreach_join_', ''))
+          const { formatInviteHelp } = await import('@/lib/discord-outreach')
+          await sendMessage(chatId, formatInviteHelp(serverName), { disable_web_page_preview: true })
+        } else if (data.startsWith('outreach_joined_')) {
+          // User hat auf "Bin beigetreten!" geklickt
+          const serverName = decodeURIComponent(data.replace('outreach_joined_', ''))
+          const { markServerAsJoined } = await import('@/lib/discord-outreach')
+          const entry = await markServerAsJoined(serverName)
+
+          if (entry) {
+            await sendMessageWithButtons(chatId, `🎉 *Super! ${serverName}* als beigetreten markiert!
+
+*Nächster Schritt:* Stell dich im Server vor!
+
+Ich generiere dir ein passendes Intro:`, [
+              [
+                { text: '👨‍🎓 Student-Intro', callback_data: 'outreach_intro_student' },
+                { text: '🔬 Researcher-Intro', callback_data: 'outreach_intro_researcher' }
+              ],
+              [
+                { text: '🎓 PhD-Intro', callback_data: 'outreach_intro_phd' }
+              ]
+            ])
+            // Speichere Server-Name für Intro-Generierung
+            pendingOutreachInput.set(callbackQuery.from.id, { type: 'intro', data: { serverName } })
+          }
+        }
       }
 
       // Answer callback to remove loading state
@@ -548,6 +990,124 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
       return NextResponse.json({ ok: true })
 
     } else if (message.text) {
+      // PENDING FOUNDING MEMBER INPUT
+      const foundingInput = pendingFoundingInput.get(userId)
+      if (foundingInput === 'set' && !message.text.startsWith('/')) {
+        const count = parseInt(message.text.trim())
+        if (!isNaN(count) && count >= 0 && count <= 100) {
+          const { setFoundingMemberCount, getFoundingMemberStats, formatFoundingMemberStats } = await import('@/lib/discord-ai')
+          await setFoundingMemberCount(count)
+          const stats = await getFoundingMemberStats()
+          pendingFoundingInput.delete(userId)
+          await sendMessage(chatId, `✅ *Founding Members auf ${count} gesetzt!*
+
+${formatFoundingMemberStats(stats)}`)
+        } else {
+          await sendMessage(chatId, `❌ Ungültige Zahl. Bitte eine Zahl zwischen 0 und 100 eingeben.`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // PENDING OUTREACH INPUT
+      const outreachInput = pendingOutreachInput.get(userId)
+      if (outreachInput && !message.text.startsWith('/')) {
+        if (outreachInput.type === 'add_server') {
+          // User hat Suchbegriff eingegeben
+          await sendChatAction(chatId, 'typing')
+          const { discoverServers, formatServerList } = await import('@/lib/discord-outreach')
+          const servers = await discoverServers(message.text.trim())
+
+          if (servers.length === 0) {
+            await sendMessage(chatId, `❌ Keine Server gefunden für "${message.text}"
+
+Versuche andere Begriffe wie:
+• qualitative Forschung
+• uni wien
+• sozialwissenschaft
+• phd life`)
+          } else {
+            // Server mit Buttons zum Hinzufügen
+            let serverList = `🔍 *${servers.length} Server gefunden:*\n\n`
+            serverList += formatServerList(servers)
+
+            const buttons = servers.slice(0, 4).map(s => [{
+              text: `➕ ${s.name.substring(0, 20)}`,
+              callback_data: `outreach_add_${encodeURIComponent(s.name)}`
+            }])
+
+            await sendMessageWithButtons(chatId, serverList, buttons)
+          }
+          pendingOutreachInput.delete(userId)
+          return NextResponse.json({ ok: true })
+        } else if (outreachInput.type === 'intro') {
+          // User hat Server-Namen für Intro eingegeben
+          pendingOutreachInput.set(userId, { type: 'intro', data: { serverName: message.text.trim() } })
+
+          await sendMessageWithButtons(chatId, `📝 *Intro generieren für:* ${message.text}
+
+Wähle den Stil:`, [
+            [
+              { text: '👨‍🎓 Student', callback_data: 'outreach_intro_student' },
+              { text: '🔬 Researcher', callback_data: 'outreach_intro_researcher' }
+            ],
+            [
+              { text: '🎓 PhD/Doktorand', callback_data: 'outreach_intro_phd' }
+            ]
+          ])
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // PENDING AI ANNOUNCEMENT INPUT
+      const pendingAI = pendingAnnouncements.get(userId)
+      if (pendingAI && pendingAI.startsWith('pending_') && !message.text.startsWith('/')) {
+        const type = pendingAI.replace('pending_', '')
+        await sendChatAction(chatId, 'typing')
+
+        const { generateAnnouncement } = await import('@/lib/discord-ai')
+        let style: 'professional' | 'celebration' | 'urgent' = 'professional'
+        if (type === 'feature' || type === 'milestone') style = 'celebration'
+        if (type === 'maintenance') style = 'urgent'
+
+        const announcement = await generateAnnouncement(message.text, style)
+        pendingAnnouncements.set(userId, announcement)
+
+        await sendMessageWithButtons(chatId, `🧠 *AI-Ankündigung:*
+
+${announcement}`, [
+          [
+            { text: '✅ So posten', callback_data: 'ai_post_announcements' },
+            { text: '🔄 Neu generieren', callback_data: `ai_regenerate_${encodeURIComponent(message.text)}` }
+          ],
+          [
+            { text: '📢 → Announcements', callback_data: 'ai_post_announcements' },
+            { text: '🏆 → Founding', callback_data: 'ai_post_founding' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // PENDING DISCORD MESSAGE - Wenn User auf Button geklickt hat
+      const pendingChannel = getPendingDiscordChannel(userId)
+      if (pendingChannel && !message.text.startsWith('/')) {
+        // User hat Nachricht geschrieben nach Button-Klick
+        const { sendToDiscordChannel } = await import('@/lib/app-integrations')
+        await sendChatAction(chatId, 'typing')
+        const result = await sendToDiscordChannel(pendingChannel, message.text)
+        clearPendingDiscordChannel(userId)
+
+        if (result.success) {
+          await sendMessage(chatId, `✅ *Discord #${result.channel}*
+
+_Gesendet als "Andi | EVIDENRA Support"_
+
+📝 ${message.text.substring(0, 100)}${message.text.length > 100 ? '...' : ''}`)
+        } else {
+          await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
       // COMMANDS
       if (message.text === '/start') {
         await sendMessage(chatId, WELCOME_MESSAGE)
@@ -592,6 +1152,409 @@ _"Termin morgen 14 Uhr Zahnarzt"_
 _"Meeting am Freitag 10:00 mit Team"_
 
 Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // ============================================
+      // EVIDENRA MARKETING COMMANDS
+      // ============================================
+
+      // /werbung - Full Marketing Automation
+      if (message.text === '/werbung' || message.text.toLowerCase().includes('werbung posten')) {
+        await sendChatAction(chatId, 'typing')
+        await sendMessage(chatId, `🚀 *EVIDENRA Werbung Pipeline startet...*
+
+1️⃣ Video suchen/erstellen
+2️⃣ YouTube Upload
+3️⃣ Twitter Post
+4️⃣ Share-Links generieren
+
+_Bitte warten..._`)
+
+        try {
+          const { runFullAutomation, generateShareLinks } = await import('@/lib/evidenra-marketing')
+          const result = await runFullAutomation()
+
+          if (result.success) {
+            let successMessage = `✅ *EVIDENRA Werbung gepostet!*\n\n`
+
+            if (result.youtube?.success) {
+              successMessage += `📺 *YouTube:* ${result.youtube.url}\n`
+            } else {
+              successMessage += `📺 YouTube: ${result.youtube?.error || 'Uebersprungen'}\n`
+            }
+
+            if (result.twitter?.success) {
+              successMessage += `🐦 *Twitter:* ${result.twitter.url}\n`
+            } else {
+              successMessage += `🐦 Twitter: ${result.twitter?.error || 'Uebersprungen'}\n`
+            }
+
+            if (result.shareLinks) {
+              successMessage += `\n📤 *Jetzt teilen (1 Klick):*\n\n`
+              successMessage += `LinkedIn: ${result.shareLinks.linkedin}\n\n`
+              successMessage += `Facebook: ${result.shareLinks.facebook}\n\n`
+              successMessage += `Reddit: ${result.shareLinks.reddit}\n\n`
+              successMessage += `Instagram: ${result.shareLinks.instagram}\n\n`
+              successMessage += `_Eingeloggt = KEIN Captcha!_`
+            }
+
+            await sendMessage(chatId, successMessage, { disable_web_page_preview: true })
+
+            // Video direkt in Telegram senden
+            if (result.video?.path) {
+              await sendChatAction(chatId, 'upload_video')
+              try {
+                await sendVideo(chatId, result.video.path, '🎬 EVIDENRA AI Video')
+              } catch (videoErr: any) {
+                console.log('[Telegram] Video senden fehlgeschlagen:', videoErr?.message || videoErr)
+              }
+            }
+          } else {
+            await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ *Fehler:* ${e?.message || String(e)}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /video - Create new video with Genesis Engine
+      if (message.text === '/video' || message.text === '/neues-video') {
+        await sendChatAction(chatId, 'typing')
+        await sendMessage(chatId, `🎬 *Video erstellen...*\n\n_Genesis Engine wird gestartet..._`)
+
+        try {
+          const { createVideo } = await import('@/lib/evidenra-marketing')
+          const result = await createVideo()
+
+          if (result.success && result.videoPath) {
+            const fileName = result.videoPath.split('\\').pop() || 'video.mp4'
+            await sendMessage(chatId, `✅ *Video erstellt!*\n\n📁 ${fileName}\n\n_Verwende /youtube zum Hochladen_`)
+          } else {
+            await sendMessage(chatId, `❌ Video-Erstellung fehlgeschlagen: ${result.error}`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /youtube - Upload to YouTube
+      if (message.text === '/youtube' || message.text.toLowerCase().includes('youtube hochladen')) {
+        await sendChatAction(chatId, 'typing')
+
+        try {
+          const { findLatestVideo, uploadToYouTube } = await import('@/lib/evidenra-marketing')
+          const videoPath = findLatestVideo()
+
+          if (!videoPath) {
+            await sendMessage(chatId, `❌ Kein Video gefunden. Erstelle zuerst eines mit /video`)
+            return NextResponse.json({ ok: true })
+          }
+
+          const fileName = videoPath.split('\\').pop() || 'video.mp4'
+          await sendMessage(chatId, `📺 *YouTube Upload...*\n\n📁 ${fileName}\n\n_Lade hoch..._`)
+
+          const result = await uploadToYouTube(videoPath)
+
+          if (result.success) {
+            await sendMessage(chatId, `✅ *YouTube Upload erfolgreich!*\n\n🔗 ${result.url}`)
+          } else {
+            await sendMessage(chatId, `❌ Upload fehlgeschlagen: ${result.error}`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /twitter - Post to Twitter
+      if (message.text === '/twitter' || message.text.toLowerCase().includes('twitter posten')) {
+        await sendChatAction(chatId, 'typing')
+
+        try {
+          const { findLatestVideo, uploadVideoToTwitter, postToTwitter } = await import('@/lib/evidenra-marketing')
+          const videoPath = findLatestVideo()
+
+          if (!videoPath) {
+            await sendMessage(chatId, `❌ Kein Video gefunden.`)
+            return NextResponse.json({ ok: true })
+          }
+
+          const fileName = videoPath.split('\\').pop() || 'video.mp4'
+          await sendMessage(chatId, `🐦 *Twitter Post...*\n\n📁 ${fileName}\n\n_Lade hoch..._`)
+
+          const mediaId = await uploadVideoToTwitter(videoPath)
+
+          if (mediaId) {
+            const tweetText = `EVIDENRA - Qualitative Forschung mit KI
+
+Interviews 10x schneller analysieren!
+60% Founding Members Rabatt!
+
+#QualitativeForschung #EVIDENRA #KI`
+
+            const result = await postToTwitter(tweetText, mediaId)
+
+            if (result.success) {
+              await sendMessage(chatId, `✅ *Tweet gepostet!*\n\n🔗 ${result.url}`)
+            } else {
+              await sendMessage(chatId, `❌ Tweet fehlgeschlagen: ${result.error}`)
+            }
+          } else {
+            await sendMessage(chatId, `❌ Video-Upload fehlgeschlagen`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /share - Send share links
+      if (message.text === '/share' || message.text === '/teilen') {
+        const { generateShareLinks } = await import('@/lib/evidenra-marketing')
+        const links = generateShareLinks()
+
+        await sendMessage(chatId, `📤 *EVIDENRA Share-Links*
+
+*LinkedIn:*
+${links.linkedin}
+
+*Facebook:*
+${links.facebook}
+
+*Reddit:*
+${links.reddit}
+
+*Instagram:*
+${links.instagram}
+
+_Eingeloggt = KEIN Captcha!_`, { disable_web_page_preview: true })
+        return NextResponse.json({ ok: true })
+      }
+
+      // /marketing-status - Check marketing setup status
+      if (message.text === '/marketing-status' || message.text === '/mstatus') {
+        const { getMarketingStatus } = await import('@/lib/evidenra-marketing')
+        const status = getMarketingStatus()
+
+        await sendMessage(chatId, `📊 *EVIDENRA Marketing Status*
+
+📺 YouTube API: ${status.youtube ? '✅ Konfiguriert' : '❌ Nicht konfiguriert'}
+🐦 Twitter API: ${status.twitter ? '✅ Aktiv' : '❌ Nicht aktiv'}
+🎬 Genesis Engine: ${status.genesisEngine ? '✅ Vorhanden' : '❌ Nicht gefunden'}
+📁 Letztes Video: ${status.latestVideo ? status.latestVideo.split('\\').pop() : 'Keins'}
+
+*Befehle:*
+/werbung - Komplette Automation
+/video - Neues Video erstellen
+/youtube - YouTube Upload
+/twitter - Twitter Post
+/share - Share-Links
+/voiceover - ElevenLabs Voiceover
+/avatar - HeyGen Avatar Video`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // ============================================
+      // AI VIDEO & VOICE COMMANDS
+      // ============================================
+
+      // /voiceover - ElevenLabs Text-to-Speech
+      if (message.text === '/voiceover' || message.text === '/tts' || message.text === '/stimme') {
+        await sendMessageWithButtons(chatId, `🎤 *ElevenLabs Voiceover*
+
+Erstelle professionelle deutsche Voiceovers!
+
+*Verwendung:*
+\`/voiceover Dein Text hier\`
+
+*Oder waehle einen Preset:*`, [
+          [
+            { text: '📢 EVIDENRA Werbung', callback_data: 'voice_evidenra' },
+            { text: '👋 Begruesssung', callback_data: 'voice_greeting' }
+          ],
+          [
+            { text: '📊 Produkt-Demo', callback_data: 'voice_demo' },
+            { text: '🎯 Call-to-Action', callback_data: 'voice_cta' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /voiceover mit Text
+      if (message.text.startsWith('/voiceover ') || message.text.startsWith('/tts ')) {
+        const text = message.text.replace(/^\/(voiceover|tts)\s+/, '').trim()
+
+        if (!text) {
+          await sendMessage(chatId, `Bitte gib einen Text an:\n\`/voiceover Dein Text hier\``)
+          return NextResponse.json({ ok: true })
+        }
+
+        await sendChatAction(chatId, 'record_voice')
+        await sendMessage(chatId, `🎤 *Generiere Voiceover...*\n\n_"${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"_`)
+
+        try {
+          const { textToSpeech } = await import('@/lib/elevenlabs')
+          const result = await textToSpeech(text, {
+            voice: 'sarah',
+            model: 'multilingual_v2',
+            language: 'de'
+          })
+
+          if (result.success && result.audio) {
+            // Audio als Voice Message senden
+            // Buffer zu ArrayBuffer kopieren für Blob-Kompatibilität (TypeScript strict mode)
+            const audioBuffer = result.audio.buffer.slice(result.audio.byteOffset, result.audio.byteOffset + result.audio.byteLength) as ArrayBuffer
+            const formData = new FormData()
+            formData.append('chat_id', chatId.toString())
+            formData.append('voice', new Blob([audioBuffer], { type: 'audio/mpeg' }), 'voiceover.mp3')
+            formData.append('caption', '🎤 ElevenLabs Voiceover')
+
+            await fetch(`${TELEGRAM_API}/sendVoice`, {
+              method: 'POST',
+              body: formData
+            })
+          } else {
+            await sendMessage(chatId, `❌ Voiceover fehlgeschlagen: ${result.error}\n\n_Hast du ELEVENLABS_API_KEY in den Environment Variables?_`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ Fehler: ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /avatar - HeyGen Avatar Video
+      if (message.text === '/avatar' || message.text === '/heygen') {
+        await sendMessageWithButtons(chatId, `🎬 *HeyGen Avatar Video*
+
+Erstelle Videos mit sprechenden AI-Avataren!
+
+*Verwendung:*
+\`/avatar Dein Script hier\`
+
+*Oder waehle einen Preset:*`, [
+          [
+            { text: '👩 Anna (Professionell)', callback_data: 'avatar_anna' },
+            { text: '👨 Josh (Business)', callback_data: 'avatar_josh' }
+          ],
+          [
+            { text: '📢 EVIDENRA Werbung', callback_data: 'avatar_evidenra' },
+            { text: '📊 Status pruefen', callback_data: 'avatar_status' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /avatar mit Script - OHNE WARTEN um Telegram-Retries zu vermeiden
+      if (message.text.startsWith('/avatar ') || message.text.startsWith('/heygen ')) {
+        const script = message.text.replace(/^\/(avatar|heygen)\s+/, '').trim()
+
+        if (!script) {
+          await sendMessage(chatId, `Bitte gib ein Script an:\n\`/avatar Dein Script hier\``)
+          return NextResponse.json({ ok: true })
+        }
+
+        await sendChatAction(chatId, 'typing')
+
+        try {
+          const { createAvatarVideo } = await import('@/lib/heygen')
+          const createResult = await createAvatarVideo({
+            script,
+            avatar: 'anna',
+            voice: 'german_female',
+            aspectRatio: '16:9'
+          })
+
+          if (!createResult.success || !createResult.video_id) {
+            await sendMessage(chatId, `❌ Video-Erstellung fehlgeschlagen: ${createResult.error}`)
+            return NextResponse.json({ ok: true })
+          }
+
+          // SOFORT antworten mit Video ID
+          await sendMessage(chatId, `🎬 *Avatar Video gestartet!*
+
+📝 _"${script.substring(0, 80)}${script.length > 80 ? '...' : ''}"_
+🆔 Video ID: \`${createResult.video_id}\`
+
+⏳ Fertig in 2-5 Minuten.
+👉 Status: /videostatus ${createResult.video_id}`)
+
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ Fehler: ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /videostatus - HeyGen Video Status prüfen
+      if (message.text === '/videostatus' || message.text.startsWith('/videostatus ')) {
+        const videoId = message.text.replace('/videostatus', '').trim()
+
+        if (!videoId) {
+          await sendMessage(chatId, `Bitte gib eine Video ID an:\n\`/videostatus abc123\``)
+          return NextResponse.json({ ok: true })
+        }
+
+        try {
+          const { getVideoStatus } = await import('@/lib/heygen')
+          const status = await getVideoStatus(videoId)
+
+          if (status.status === 'completed' && status.video_url) {
+            // Share Links generieren
+            const linkedinUrl = `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(status.video_url)}`
+            const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent('EVIDENRA - KI für qualitative Forschung')}&url=${encodeURIComponent(status.video_url)}`
+            const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(status.video_url)}`
+
+            await sendMessage(chatId, `✅ *VIDEO FERTIG!*
+
+🎬 [Video ansehen](${status.video_url})
+⏱️ Dauer: ${status.duration ? Math.round(status.duration) + 's' : 'N/A'}
+
+📤 *Jetzt teilen:*
+• [LinkedIn](${linkedinUrl})
+• [Twitter](${twitterUrl})
+• [Facebook](${facebookUrl})
+
+📋 *Compositing mit Genesis Video:*
+\`\`\`
+cd "D:\\EVIDENRA-Videos"
+node composite-video.js "${status.video_url}" "D:\\Genesis Engine\\video-generator\\output\\EVIDENRA-Professional-v7.6-Demo.mp4"
+\`\`\`
+
+🔗 [evidenra.com/pricing](https://evidenra.com/pricing)`)
+          } else if (status.status === 'failed') {
+            await sendMessage(chatId, `❌ Video fehlgeschlagen: ${status.error || 'Unbekannter Fehler'}`)
+          } else if (status.status === 'processing' || status.status === 'pending') {
+            await sendMessage(chatId, `⏳ *Video wird noch generiert...*\n\nStatus: ${status.status}\n\n_Versuche es in 1-2 Minuten nochmal._\n\n👉 /videostatus ${videoId}`)
+          } else {
+            await sendMessage(chatId, `❓ Status: ${status.status}`)
+          }
+        } catch (e: any) {
+          await sendMessage(chatId, `❌ Fehler: ${e.message}`)
+        }
+        return NextResponse.json({ ok: true })
+      }
+
+      // /voices - Verfuegbare Stimmen anzeigen
+      if (message.text === '/voices' || message.text === '/stimmen') {
+        const voices = `🎤 *Verfuegbare Stimmen*
+
+*ElevenLabs (Voiceover):*
+• Sarah - Warm und professionell
+• Bella - Jung und energisch
+• Adam - Tief und vertrauenswuerdig
+• Josh - Jung und dynamisch
+
+*HeyGen (Avatar Videos):*
+• de-DE-KatjaNeural - Deutsche Frau
+• de-DE-ConradNeural - Deutscher Mann
+
+*Verwendung:*
+\`/voiceover [text]\` - Audio generieren
+\`/avatar [script]\` - Video mit Avatar`
+
+        await sendMessage(chatId, voices)
         return NextResponse.json({ ok: true })
       }
 
@@ -644,6 +1607,400 @@ _"Wetter in Berlin"_`)
         return NextResponse.json({ ok: true })
       }
 
+      // ============================================
+      // DISCORD AI FEATURES
+      // ============================================
+
+      // /ai oder /ai-announce - AI-generierte Ankündigung
+      if (message.text === '/ai' || message.text === '/ai-announce') {
+        await sendMessageWithButtons(chatId, `🧠 *AI-Announcement Generator*
+
+Wähle einen Typ oder schreib:
+\`/ai Neues Feature: Auto-Export\`
+
+Claude generiert eine professionelle Ankündigung!`, [
+          [
+            { text: '🚀 Neues Feature', callback_data: 'ai_feature' },
+            { text: '🔧 Wartung', callback_data: 'ai_maintenance' }
+          ],
+          [
+            { text: '🏆 Milestone', callback_data: 'ai_milestone' },
+            { text: '📢 Allgemein', callback_data: 'ai_general' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /ai mit Text - Direkt generieren
+      if (message.text.startsWith('/ai ')) {
+        const topic = message.text.replace('/ai ', '').trim()
+        if (topic) {
+          await sendChatAction(chatId, 'typing')
+          const { generateAnnouncement } = await import('@/lib/discord-ai')
+          const announcement = await generateAnnouncement(topic)
+
+          // Speichere generierte Ankündigung für Buttons
+          pendingAnnouncements.set(userId, announcement)
+
+          await sendMessageWithButtons(chatId, `🧠 *AI-Ankündigung:*
+
+${announcement}`, [
+            [
+              { text: '✅ So posten', callback_data: 'ai_post_announcements' },
+              { text: '🔄 Neu generieren', callback_data: `ai_regenerate_${encodeURIComponent(topic)}` }
+            ],
+            [
+              { text: '📢 → Announcements', callback_data: 'ai_post_announcements' },
+              { text: '🏆 → Founding', callback_data: 'ai_post_founding' }
+            ]
+          ])
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // /founding - Founding Member Status
+      if (message.text === '/founding') {
+        const { getFoundingMemberStats, formatFoundingMemberStats } = await import('@/lib/discord-ai')
+        const stats = await getFoundingMemberStats()
+        const formatted = formatFoundingMemberStats(stats)
+
+        await sendMessageWithButtons(chatId, formatted, [
+          [
+            { text: '➕ Member hinzufügen', callback_data: 'founding_add' },
+            { text: '📝 Zahl setzen', callback_data: 'founding_set' }
+          ],
+          [
+            { text: '📢 Announcement posten', callback_data: 'founding_announce' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /stats - Discord Statistiken
+      if (message.text === '/stats') {
+        await sendChatAction(chatId, 'typing')
+        const { getDiscordStats, formatDiscordStats, getFoundingMemberStats } = await import('@/lib/discord-ai')
+
+        const discordStats = await getDiscordStats()
+        const foundingStats = await getFoundingMemberStats()
+
+        let statsMessage = `📊 *EVIDENRA Discord Stats*
+━━━━━━━━━━━━━━━━━━━━━`
+
+        if (discordStats && discordStats.memberCount > 0) {
+          statsMessage += `
+
+👥 *Member:* ${discordStats.memberCount}
+├ Diese Woche: +${discordStats.newMembersWeek}
+└ Heute: +${discordStats.newMembersToday}`
+        }
+
+        statsMessage += `
+
+🏆 *Founding Members:*
+├ Vergeben: ${foundingStats.current}/${foundingStats.total}
+├ Verfügbar: ${foundingStats.remaining}
+└ Fortschritt: ${foundingStats.percentage}%`
+
+        if (foundingStats.projectedSelloutDays) {
+          statsMessage += `
+
+⏳ *Prognose:* Ausverkauft in ~${foundingStats.projectedSelloutDays} Tagen`
+        }
+
+        await sendMessage(chatId, statsMessage)
+        return NextResponse.json({ ok: true })
+      }
+
+      // ============================================
+      // UNI-OUTREACH COMMANDS
+      // ============================================
+
+      // /find oder /servers - Server Discovery
+      if (message.text === '/find' || message.text === '/servers') {
+        await sendMessageWithButtons(chatId, `🎓 *Uni-Outreach Tool*
+
+Finde Discord-Server von Universitäten, Forschungs-Communities und Studenten-Gruppen.
+
+*Optionen:*`, [
+          [
+            { text: '🔍 Server suchen', callback_data: 'outreach_find' },
+            { text: '📋 Meine Liste', callback_data: 'outreach_list' }
+          ],
+          [
+            { text: '📊 Statistiken', callback_data: 'outreach_stats' },
+            { text: '📅 Wochenreport', callback_data: 'outreach_report' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /find mit Suchbegriff - DISCORD DISCOVERY API + FERTIGES INTRO!
+      if (message.text.startsWith('/find ')) {
+        const query = message.text.replace('/find ', '').trim()
+        if (query) {
+          await sendChatAction(chatId, 'typing')
+          const { searchDiscordDiscovery, formatDiscoveryResults, getDiscoveryJoinLink } = await import('@/lib/discord-outreach')
+          const servers = await searchDiscordDiscovery(query, 10)
+
+          if (servers.length === 0) {
+            await sendMessage(chatId, `❌ Keine Server gefunden für "${query}"
+
+Versuche:
+• research, study, university
+• psychology, sociology, science
+• academic, phd, student`)
+          } else {
+            // 1. Server-Liste mit Join-Buttons
+            let serverList = `🎯 *${servers.length} Server für "${query}":*\n\n`
+            serverList += formatDiscoveryResults(servers)
+
+            const buttons = servers.slice(0, 5).map(s => [{
+              text: `🚀 ${s.name.substring(0, 22)} (${s.memberCount >= 1000 ? Math.round(s.memberCount/1000) + 'k' : s.memberCount})`,
+              url: getDiscoveryJoinLink(s)
+            }])
+
+            await sendMessageWithButtons(chatId, serverList, buttons)
+
+            // 2. Fertiges Intro zum Kopieren/Weiterleiten
+            const intro = `👋 Hi everyone!
+
+I'm working on EVIDENRA - a tool for qualitative research.
+
+🔬 What it does:
+• Auto-transcription of interviews
+• AI-assisted coding & analysis
+• Export to NVivo, ATLAS.ti, MAXQDA
+
+🎓 Great for theses, dissertations & qualitative studies.
+
+Currently in beta - happy to answer questions!
+🔗 https://evidenra.com`
+
+            await sendMessage(chatId, intro)
+
+            await sendMessage(chatId, `👆 *Fertige Nachricht!*
+
+1. Tritt einem Server bei (Buttons oben)
+2. Leite diese Nachricht weiter oder kopiere sie
+3. Poste im #introductions Channel`)
+          }
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // /outreach - Outreach Dashboard
+      if (message.text === '/outreach') {
+        const { getOutreachStats, formatOutreachStats, getOutreachEntries, formatOutreachList } = await import('@/lib/discord-outreach')
+        const stats = await getOutreachStats()
+        const entries = await getOutreachEntries()
+        const recentEntries = entries.slice(-5)
+
+        await sendMessageWithButtons(chatId, `${formatOutreachStats(stats)}
+
+📋 *Letzte Einträge:*
+${formatOutreachList(recentEntries)}`, [
+          [
+            { text: '🔍 Neue Server finden', callback_data: 'outreach_find' },
+            { text: '📅 Wochenreport', callback_data: 'outreach_report' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // /intro - Auto-Intro Generator
+      if (message.text === '/intro') {
+        await sendMessage(chatId, `📝 *Auto-Intro Generator*
+
+Für welchen Server soll ich eine Vorstellung schreiben?
+
+_Schreib den Server-Namen:_`)
+        pendingOutreachInput.set(userId, { type: 'intro' })
+        return NextResponse.json({ ok: true })
+      }
+
+      // /intro mit Server-Name
+      if (message.text.startsWith('/intro ')) {
+        const serverName = message.text.replace('/intro ', '').trim()
+        if (serverName) {
+          pendingOutreachInput.set(userId, { type: 'intro', data: { serverName } })
+
+          await sendMessageWithButtons(chatId, `📝 *Intro für:* ${serverName}
+
+Wähle den Stil:`, [
+            [
+              { text: '👨‍🎓 Student', callback_data: 'outreach_intro_student' },
+              { text: '🔬 Researcher', callback_data: 'outreach_intro_researcher' }
+            ],
+            [
+              { text: '🎓 PhD/Doktorand', callback_data: 'outreach_intro_phd' }
+            ]
+          ])
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // /report - Weekly Report
+      if (message.text === '/report') {
+        await sendChatAction(chatId, 'typing')
+        const { generateWeeklyReport } = await import('@/lib/discord-outreach')
+        const report = await generateWeeklyReport()
+        await sendMessage(chatId, report)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /join - Zeigt wie man einem Server beitritt
+      if (message.text === '/join') {
+        await sendMessage(chatId, `🔗 *Server beitreten*
+
+Schreib: \`/join Servername\`
+
+_Beispiel: /join Uni Wien Students_
+
+Ich zeige dir dann Links um den Invite zu finden!`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /join <server> - Zeige Invite-Links
+      if (message.text.startsWith('/join ')) {
+        const serverName = message.text.replace('/join ', '').trim()
+        if (serverName) {
+          const { formatInviteHelp } = await import('@/lib/discord-outreach')
+          await sendMessage(chatId, formatInviteHelp(serverName), { disable_web_page_preview: true })
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // /joined - Server als beigetreten markieren
+      if (message.text === '/joined') {
+        await sendMessage(chatId, `✅ *Server als beigetreten markieren*
+
+Schreib: \`/joined Servername\`
+
+_Beispiel: /joined Uni Wien Students_
+
+Der Server wird dann in deiner Outreach-Liste aktualisiert!`)
+        return NextResponse.json({ ok: true })
+      }
+
+      // /joined <server> - Markiere als beigetreten
+      if (message.text.startsWith('/joined ')) {
+        const serverName = message.text.replace('/joined ', '').trim()
+        if (serverName) {
+          const { markServerAsJoined } = await import('@/lib/discord-outreach')
+          const entry = await markServerAsJoined(serverName)
+
+          if (entry) {
+            await sendMessageWithButtons(chatId, `✅ *${serverName}* als beigetreten markiert!
+
+📊 Status: joined
+📅 Beigetreten: ${new Date().toLocaleDateString('de-AT')}
+
+*Nächster Schritt:* Intro posten!`, [
+              [
+                { text: '📝 Intro generieren', callback_data: `outreach_intro_for_${encodeURIComponent(serverName)}` }
+              ]
+            ])
+          } else {
+            await sendMessage(chatId, `❌ Fehler beim Aktualisieren.`)
+          }
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // /discord Command - Multi-Channel Support mit Buttons
+      if (message.text === '/discord') {
+        await sendMessageWithButtons(chatId, `🎮 *Discord Multi-Channel*
+
+Wähle einen Channel oder schreib direkt:
+\`#announcements 🎉 Nachricht\`
+
+Postet als: *Andi | EVIDENRA Support*
+✨ KEIN BOT-Badge!`, [
+          [
+            { text: '📢 Announcements', callback_data: 'discord_announcements' },
+            { text: '💬 Support', callback_data: 'discord_support' }
+          ],
+          [
+            { text: '🏆 Founding', callback_data: 'discord_founding' },
+            { text: '⭐ Success', callback_data: 'discord_success' }
+          ],
+          [
+            { text: '📚 Tutorials', callback_data: 'discord_tutorials' },
+            { text: '👋 Welcome', callback_data: 'discord_welcome' }
+          ]
+        ])
+        return NextResponse.json({ ok: true })
+      }
+
+      // Discord Channel Commands - Direkt posten
+      const discordChannelCommands: Record<string, string> = {
+        '/announcements': 'announcements',
+        '/support': 'help-and-support',
+        '/founding': 'founding-lounge',
+        '/success': 'success-stories',
+        '/tutorials': 'tutorials',
+        '/welcome': 'welcome'
+      }
+
+      for (const [cmd, channel] of Object.entries(discordChannelCommands)) {
+        if (message.text.startsWith(cmd)) {
+          const msgContent = message.text.replace(cmd, '').trim()
+
+          if (!msgContent) {
+            // Keine Nachricht - frage nach
+            await sendMessage(chatId, `📝 *Was soll ich in #${channel} posten?*
+
+Schreib deine Nachricht (mit Emojis!):`)
+            // Speichere pending channel für nächste Nachricht
+            await savePendingDiscordChannel(userId, channel)
+            return NextResponse.json({ ok: true })
+          }
+
+          // Nachricht direkt senden
+          const { sendToDiscordChannel } = await import('@/lib/app-integrations')
+          await sendChatAction(chatId, 'typing')
+          const result = await sendToDiscordChannel(channel, msgContent)
+
+          if (result.success) {
+            await sendMessage(chatId, `✅ *Discord #${result.channel}*
+
+_Gesendet als "Andi | EVIDENRA Support"_
+
+📝 ${msgContent.substring(0, 100)}${msgContent.length > 100 ? '...' : ''}`)
+          } else {
+            await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
+          }
+          return NextResponse.json({ ok: true })
+        }
+      }
+
+      // Direkter Discord Channel Post: #channel Nachricht
+      if (message.text.startsWith('#') || message.text.toLowerCase().startsWith('discord')) {
+        const { sendToDiscordChannel, parseDiscordMessage } = await import('@/lib/app-integrations')
+        const textWithoutPrefix = message.text.toLowerCase().startsWith('discord')
+          ? message.text.replace(/^discord[:\s]*/i, '').trim()
+          : message.text
+
+        const { channel, message: discordMsg } = parseDiscordMessage(textWithoutPrefix)
+
+        if (discordMsg) {
+          await sendChatAction(chatId, 'typing')
+          const result = await sendToDiscordChannel(channel, discordMsg)
+
+          if (result.success) {
+            await sendMessage(chatId, `✅ *Discord #${result.channel}*
+
+_Gesendet als "Andi | EVIDENRA Support"_
+
+📝 ${discordMsg.substring(0, 100)}${discordMsg.length > 100 ? '...' : ''}`)
+          } else {
+            await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
+          }
+          return NextResponse.json({ ok: true })
+        }
+      }
+
       if (message.text === '/history') {
         const { getConversationHistory } = await import('@/lib/supabase')
         const history = await getConversationHistory(userId, 10)
@@ -684,6 +2041,265 @@ _"Wetter in Berlin"_`)
         await sendMessage(chatId, response, { disable_web_page_preview: false })
       } else {
         await sendMessage(chatId, `Keine Videos gefunden. Hier ist der YouTube Link:\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(intent.query)}`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // AVATAR VIDEO (HeyGen) - Via Voice Command
+    // WICHTIG: Nicht auf Video warten! Sofort antworten um Telegram-Retries zu vermeiden
+    // ============================================
+    if (intent.type === 'avatar') {
+      const script = intent.query
+      if (!script || script.length < 10) {
+        await sendMessage(chatId, `🎬 *Avatar Video erstellen*
+
+Bitte gib ein Script an (min. 10 Zeichen):
+• "Mach ein Avatar Video: Hallo, ich bin Anna..."
+• "Avatar: Willkommen bei EVIDENRA!"
+
+Oder nutze: /avatar Dein Text hier`)
+        return NextResponse.json({ ok: true })
+      }
+
+      try {
+        const { createAvatarVideo } = await import('@/lib/heygen')
+        const result = await createAvatarVideo({
+          script,
+          avatar: 'anna',
+          voice: 'german_female',
+          aspectRatio: '16:9'
+        })
+
+        if (!result.success || !result.video_id) {
+          await sendMessage(chatId, `❌ Video-Erstellung fehlgeschlagen: ${result.error}`)
+          return NextResponse.json({ ok: true })
+        }
+
+        // SOFORT antworten - NICHT auf Video warten!
+        await sendMessage(chatId, `🎬 *Avatar Video gestartet!*
+
+📝 Script: "${script.substring(0, 80)}${script.length > 80 ? '...' : ''}"
+🆔 Video ID: \`${result.video_id}\`
+
+⏳ Das Video wird in 2-5 Minuten fertig.
+
+👉 Status prüfen: /videostatus ${result.video_id}
+
+_Oder warte - ich schicke dir den Link wenn es fertig ist!_`)
+
+        // KEIN Background-Polling auf Vercel (serverless terminiert nach Response)
+        // User muss /videostatus nutzen oder 2-5 Min warten
+
+      } catch (e: any) {
+        await sendMessage(chatId, `❌ Fehler: ${e.message}`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // WERBUNG AUTOMATION - Kompletter Workflow
+    // Sprachbefehl: "Werbung mit Video über qualitative Forschung"
+    // Genesis Engine Videos + HeyGen Avatar + Social Media
+    // ============================================
+    if ((intent as any).type === 'werbung') {
+      const topic = intent.query || 'EVIDENRA qualitative Forschung'
+      const topicLower = topic.toLowerCase()
+
+      // Genesis Engine Videos (verfügbar in D:\Genesis Engine\video-generator\output)
+      const genesisVideos: Record<string, { file: string, title: string }> = {
+        'dashboard': { file: 'EVIDENRA-Dashboard-Tutorial.mp4', title: 'Dashboard Tutorial' },
+        'analyse': { file: 'EVIDENRA-Analyse-AKIH-Score.mp4', title: 'AKIH Analyse' },
+        'kodierung': { file: 'EVIDENRA-Kodierung-Analyse.mp4', title: 'Kodierung & Analyse' },
+        'kategorien': { file: 'EVIDENRA-Kategorien-7Persona.mp4', title: '7-Persona System' },
+        'interview': { file: 'EVIDENRA-Kodierung-Analyse.mp4', title: 'Interview Analyse' },
+        'export': { file: 'EVIDENRA-Export-Formate.mp4', title: 'Export Formate' },
+        'bericht': { file: 'EVIDENRA-Bericht-Dokumentation.mp4', title: 'Berichte' },
+        'fragen': { file: 'EVIDENRA-Forschungsfragen.mp4', title: 'Forschungsfragen' },
+        'muster': { file: 'EVIDENRA-Mustererkennung.mp4', title: 'Mustererkennung' },
+        'wissen': { file: 'EVIDENRA-Wissensintegration.mp4', title: 'Wissensintegration' },
+        'omniscience': { file: 'EVIDENRA-Omniscience.mp4', title: 'Omniscience KI' },
+        'genesis': { file: 'EVIDENRA-Genesis-Engine.mp4', title: 'Genesis Engine' },
+        'lizenz': { file: 'EVIDENRA-Lizenz-Aktivierung.mp4', title: 'Lizenz & Aktivierung' },
+        'upload': { file: 'EVIDENRA-Dokumente-Upload.mp4', title: 'Dokumente Upload' },
+        'api': { file: 'EVIDENRA-Einstellungen-API-Bridge.mp4', title: 'API Bridge' },
+        'default': { file: 'EVIDENRA-Professional-v7.6-Demo.mp4', title: 'Professional Demo' }
+      }
+
+      // Passendes Genesis Video finden
+      let genesisVideo = genesisVideos.default
+      for (const [key, video] of Object.entries(genesisVideos)) {
+        if (topicLower.includes(key)) {
+          genesisVideo = video
+          break
+        }
+      }
+
+      await sendMessage(chatId, `🚀 *EVIDENRA Werbung Automation*
+
+📌 *Thema:* "${topic}"
+🎬 *Genesis Video:* ${genesisVideo.title}
+
+Starte kompletten Workflow:
+1️⃣ Script generieren (themenbasiert)
+2️⃣ HeyGen Avatar Video erstellen
+3️⃣ Genesis Engine Video: \`${genesisVideo.file}\`
+4️⃣ Videos zusammenfügen (FFmpeg Chromakey)
+5️⃣ YouTube Upload + Twitter Post
+6️⃣ Share-Links generieren
+
+⏳ Avatar-Erstellung dauert ca. 2-5 Minuten...`)
+
+      try {
+        // Schritt 1: Script generieren basierend auf Thema
+        // Erweiterte Scripts für verschiedene EVIDENRA-Features
+        const scripts: Record<string, string> = {
+          'qualitative forschung': 'Hallo! EVIDENRA ist die führende Software für qualitative Forschung mit künstlicher Intelligenz. Mit unserer AKIH-Methode analysieren Sie Interviews zehnmal schneller. Unser 7-Persona-System garantiert höchste wissenschaftliche Qualität. Besuchen Sie evidenra punkt com!',
+          'founding member': 'Werden Sie jetzt Founding Member bei EVIDENRA! Als einer der ersten Nutzer erhalten Sie 60 Prozent Rabatt auf Lebenszeit. Plus exklusiven Zugang zu neuen Features und direkten Kontakt zum Entwicklerteam. Nur begrenzte Plätze verfügbar auf evidenra punkt com.',
+          'interview': 'Müde von stundenlanger manueller Interview-Analyse? EVIDENRA analysiert Ihre Interviews automatisch mit künstlicher Intelligenz. Transkription, Kodierung und Themenanalyse in Minuten statt Tagen. Wissenschaftlich validiert. Testen Sie kostenlos auf evidenra punkt com.',
+          'dashboard': 'Das EVIDENRA Dashboard zeigt alle Ihre Forschungsprojekte auf einen Blick. Verwalten Sie Interviews, analysieren Sie Muster und erstellen Sie Berichte. Alles übersichtlich organisiert. Entdecken Sie es auf evidenra punkt com.',
+          'analyse': 'Die EVIDENRA AKIH-Methode revolutioniert qualitative Analyse. Sieben KI-Personas analysieren Ihre Daten aus verschiedenen wissenschaftlichen Perspektiven. Das Ergebnis: Tiefere Erkenntnisse in kürzerer Zeit. Mehr auf evidenra punkt com.',
+          'kodierung': 'Automatische Kodierung mit EVIDENRA. Unsere KI erkennt Themen, Kategorien und Muster in Ihren Interviews. Sie behalten die volle Kontrolle und können jederzeit anpassen. Testen Sie es auf evidenra punkt com.',
+          'kategorien': 'Das 7-Persona-System von EVIDENRA. Sieben verschiedene KI-Perspektiven analysieren Ihre Daten: Wissenschaftlich, kritisch, kreativ und mehr. So erhalten Sie ein vollständiges Bild. Jetzt auf evidenra punkt com.',
+          'export': 'EVIDENRA exportiert in alle gängigen Formate. PDF-Berichte, Word-Dokumente, Excel-Tabellen und wissenschaftliche Formate wie MAXQDA. Flexibel für Ihre Anforderungen auf evidenra punkt com.',
+          'omniscience': 'EVIDENRA Omniscience - unsere fortschrittlichste KI. Stellen Sie Fragen zu Ihren Daten in natürlicher Sprache und erhalten Sie fundierte Antworten mit Quellenangaben. Die Zukunft der Forschung auf evidenra punkt com.',
+          'genesis': 'Die Genesis Engine von EVIDENRA. Automatische Videogenerierung für Ihre Forschungsergebnisse. Präsentieren Sie Erkenntnisse visuell und überzeugend. Entdecken Sie die Möglichkeiten auf evidenra punkt com.',
+          'muster': 'Mustererkennung mit EVIDENRA. Unsere KI findet wiederkehrende Themen und Zusammenhänge in Ihren qualitativen Daten. Was würde Stunden dauern, erledigt EVIDENRA in Minuten. Testen Sie es auf evidenra punkt com.',
+          'bericht': 'Professionelle Berichte mit EVIDENRA. Von der Analyse zum fertigen Dokument in Minuten. Wissenschaftlich fundiert, professionell formatiert. Ihr Forschungsergebnis verdient die beste Präsentation. Jetzt auf evidenra punkt com.',
+          'default': 'Entdecken Sie EVIDENRA - die Revolution in der qualitativen Forschung. KI-gestützte Analyse mit höchsten wissenschaftlichen Standards. Jetzt mit 60 Prozent Founding Member Rabatt. Mehr auf evidenra punkt com.'
+        }
+
+        let script = scripts.default
+        for (const [key, value] of Object.entries(scripts)) {
+          if (topicLower.includes(key)) {
+            script = value
+            break
+          }
+        }
+
+        // Avatar automatisch basierend auf Thema auswählen
+        // Verwendet aktualisierte HeyGen Avatar-IDs (Dezember 2024)
+        const avatarSelection: Record<string, { avatar: string, voice: string, description: string }> = {
+          // Wissenschaftliche/Analyse Themen -> professionelle weibliche Stimme
+          'analyse': { avatar: 'abigail', voice: 'german_female', description: 'Abigail (Professional)' },
+          'forschung': { avatar: 'abigail', voice: 'german_female', description: 'Abigail (Professional)' },
+          'interview': { avatar: 'adriana', voice: 'german_female', description: 'Adriana (Business)' },
+          'kodierung': { avatar: 'amelia', voice: 'german_female', description: 'Amelia (Training)' },
+          'kategorien': { avatar: 'abigail', voice: 'german_female', description: 'Abigail (Professional)' },
+          // Business/Sales Themen -> männliche oder dynamische weibliche Stimme
+          'founding': { avatar: 'adrian', voice: 'german_male', description: 'Adrian (Business)' },
+          'member': { avatar: 'adrian', voice: 'german_male', description: 'Adrian (Business)' },
+          'rabatt': { avatar: 'albert', voice: 'german_male', description: 'Albert (Business)' },
+          'preis': { avatar: 'aditya', voice: 'german_male', description: 'Aditya (Professional)' },
+          // Technische Themen
+          'api': { avatar: 'aditya', voice: 'german_male', description: 'Aditya (Tech)' },
+          'export': { avatar: 'aditya', voice: 'german_male', description: 'Aditya (Friendly)' },
+          'genesis': { avatar: 'albert', voice: 'german_male', description: 'Albert (Tech)' },
+          // Tutorial/Erklärung Themen
+          'dashboard': { avatar: 'amanda', voice: 'german_female', description: 'Amanda (Tutorial)' },
+          'bericht': { avatar: 'amelia', voice: 'german_female', description: 'Amelia (Friendly)' },
+          'default': { avatar: 'abigail', voice: 'german_female', description: 'Abigail (Professional)' }
+        }
+
+        let selectedAvatar = avatarSelection.default
+        for (const [key, config] of Object.entries(avatarSelection)) {
+          if (topicLower.includes(key)) {
+            selectedAvatar = config
+            break
+          }
+        }
+
+        await sendMessage(chatId, `📝 *Schritt 1/6: Script erstellt*
+
+🎭 *Avatar:* ${selectedAvatar.description}
+_"${script.substring(0, 80)}..."_`)
+
+        // Schritt 2: HeyGen Avatar Video erstellen
+        const { createAvatarVideo, getVideoStatus } = await import('@/lib/heygen')
+        const avatarResult = await createAvatarVideo({
+          script,
+          avatar: selectedAvatar.avatar as any,
+          voice: selectedAvatar.voice as any,
+          aspectRatio: '16:9',
+          background: { type: 'color', value: '#00FF00' }
+        })
+
+        if (!avatarResult.success || !avatarResult.video_id) {
+          await sendMessage(chatId, `❌ HeyGen Fehler: ${avatarResult.error}`)
+          return NextResponse.json({ ok: true })
+        }
+
+        // SOFORT antworten - NICHT auf Video warten (Vercel Timeout!)
+        await sendMessage(chatId, `✅ *WERBUNG GESTARTET!*
+
+🎭 *Avatar:* ${selectedAvatar.description}
+🆔 *Video ID:* \`${avatarResult.video_id}\`
+
+⏳ *Video wird erstellt (2-5 Min)*
+
+👉 *Status prüfen:* /videostatus ${avatarResult.video_id}
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+📋 *Wenn Video fertig - Compositing:*
+\`\`\`
+cd "D:\\EVIDENRA-Videos"
+node composite-video.js [VIDEO_URL] "D:\\Genesis Engine\\video-generator\\output\\${genesisVideo.file}"
+\`\`\`
+
+💡 *Oder kompletter Workflow:*
+\`node werbung-automation.js "${topic}"\`
+
+🔗 [evidenra.com/pricing](https://evidenra.com/pricing)`)
+
+      } catch (e: any) {
+        await sendMessage(chatId, `❌ Fehler: ${e.message}`)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    // ============================================
+    // VOICEOVER (ElevenLabs) - Via Voice Command
+    // ============================================
+    if (intent.type === 'voiceover') {
+      const text = intent.query
+      if (!text || text.length < 5) {
+        await sendMessage(chatId, `🎤 *Voiceover erstellen*
+
+Bitte gib einen Text an:
+• "Voiceover: Willkommen bei EVIDENRA!"
+• "Sprich: Das ist ein Test"
+
+Oder nutze: /voiceover Dein Text hier`)
+        return NextResponse.json({ ok: true })
+      }
+
+      await sendChatAction(chatId, 'record_voice')
+
+      try {
+        const { textToSpeech } = await import('@/lib/elevenlabs')
+        const result = await textToSpeech(text, {
+          voice: 'sarah',
+          model: 'multilingual_v2',
+          language: 'de'
+        })
+
+        if (result.success && result.audio) {
+          const audioBuffer = result.audio.buffer.slice(result.audio.byteOffset, result.audio.byteOffset + result.audio.byteLength) as ArrayBuffer
+          const formData = new FormData()
+          formData.append('chat_id', chatId.toString())
+          formData.append('voice', new Blob([audioBuffer], { type: 'audio/mpeg' }), 'voiceover.mp3')
+          formData.append('caption', `🎤 "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`)
+
+          await fetch(`${TELEGRAM_API}/sendVoice`, {
+            method: 'POST',
+            body: formData
+          })
+        } else {
+          await sendMessage(chatId, `❌ Voiceover fehlgeschlagen: ${result.error}`)
+        }
+      } catch (e: any) {
+        await sendMessage(chatId, `❌ Fehler: ${e.message}`)
       }
       return NextResponse.json({ ok: true })
     }

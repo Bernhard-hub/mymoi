@@ -52,6 +52,18 @@ interface YouTubeCredentials {
 }
 
 function loadYouTubeCredentials(): YouTubeCredentials | null {
+  // Zuerst Environment Variables pruefen (fuer Vercel)
+  if (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_REFRESH_TOKEN) {
+    return {
+      clientId: process.env.YOUTUBE_CLIENT_ID.trim(),
+      clientSecret: process.env.YOUTUBE_CLIENT_SECRET?.trim() || '',
+      accessToken: process.env.YOUTUBE_ACCESS_TOKEN?.trim() || '',
+      refreshToken: process.env.YOUTUBE_REFRESH_TOKEN.trim(),
+      expiresAt: 0 // Force refresh
+    }
+  }
+
+  // Fallback: Lokale Datei
   try {
     if (fs.existsSync(CONFIG.youtubeCredentialsPath)) {
       return JSON.parse(fs.readFileSync(CONFIG.youtubeCredentialsPath, 'utf8'))
@@ -65,6 +77,10 @@ function saveYouTubeCredentials(credentials: YouTubeCredentials) {
 }
 
 async function refreshYouTubeToken(credentials: YouTubeCredentials): Promise<string | null> {
+  console.log('[YouTube] Refreshing token...')
+  console.log('[YouTube] Client ID:', credentials.clientId?.substring(0, 20) + '...')
+  console.log('[YouTube] Refresh Token:', credentials.refreshToken?.substring(0, 20) + '...')
+
   return new Promise((resolve) => {
     const postData = new URLSearchParams({
       refresh_token: credentials.refreshToken,
@@ -85,23 +101,31 @@ async function refreshYouTubeToken(credentials: YouTubeCredentials): Promise<str
       let data = ''
       res.on('data', chunk => data += chunk)
       res.on('end', () => {
+        console.log('[YouTube] Token response status:', res.statusCode)
         try {
           const tokens = JSON.parse(data)
           if (tokens.access_token) {
+            console.log('[YouTube] Got new access token!')
             credentials.accessToken = tokens.access_token
             credentials.expiresAt = Date.now() + (tokens.expires_in * 1000)
-            saveYouTubeCredentials(credentials)
+            // Nicht speichern auf Vercel (read-only filesystem)
+            try { saveYouTubeCredentials(credentials) } catch {}
             resolve(tokens.access_token)
           } else {
+            console.log('[YouTube] Token error:', data)
             resolve(null)
           }
-        } catch {
+        } catch (e) {
+          console.log('[YouTube] Parse error:', e)
           resolve(null)
         }
       })
     })
 
-    req.on('error', () => resolve(null))
+    req.on('error', (e) => {
+      console.log('[YouTube] Request error:', e.message)
+      resolve(null)
+    })
     req.write(postData)
     req.end()
   })
@@ -224,6 +248,144 @@ https://evidenra.com/pricing
     initReq.on('error', (e) => resolve({ success: false, error: e.message }))
     initReq.write(metadataJson)
     initReq.end()
+  })
+}
+
+// YouTube Upload von Cloud-URL
+export async function uploadToYouTubeFromUrl(videoUrl: string, title?: string): Promise<YouTubeUploadResult> {
+  console.log('[YouTube] Lade Video von URL:', videoUrl)
+
+  // Video von URL herunterladen
+  const videoBuffer = await downloadVideoBuffer(videoUrl)
+  if (!videoBuffer || videoBuffer.length === 0) {
+    return { success: false, error: 'Video konnte nicht heruntergeladen werden' }
+  }
+
+  console.log('[YouTube] Video geladen:', (videoBuffer.length / 1024 / 1024).toFixed(2), 'MB')
+
+  const credentials = loadYouTubeCredentials()
+  if (!credentials) {
+    return { success: false, error: 'YouTube nicht konfiguriert' }
+  }
+
+  // Token refresh if needed
+  let accessToken = credentials.accessToken
+  if (Date.now() >= credentials.expiresAt - 60000) {
+    const newToken = await refreshYouTubeToken(credentials)
+    if (!newToken) {
+      return { success: false, error: 'YouTube Token konnte nicht erneuert werden' }
+    }
+    accessToken = newToken
+  }
+
+  const metadata = {
+    snippet: {
+      title: title || 'EVIDENRA - AI-Powered Qualitative Research (60% OFF)',
+      description: `EVIDENRA Professional - Das fuehrende Tool fuer qualitative Forschung mit KI
+
+Was ist EVIDENRA?
+- Automatisierte Interview-Analyse mit der AKIH-Methode
+- 7-Persona-System fuer hoechste Inter-Rater-Reliabilitaet
+- Quantum AKIH Score v3.0 fuer Qualitaetsbewertung
+
+Jetzt 60% Founding Members Rabatt sichern:
+https://evidenra.com/pricing
+
+#QualitativeForschung #KI #EVIDENRA #Forschung`,
+      tags: ['EVIDENRA', 'Qualitative Forschung', 'KI', 'Interview Analyse', 'AKIH-Methode'],
+      categoryId: '28'
+    },
+    status: {
+      privacyStatus: 'public',
+      selfDeclaredMadeForKids: false
+    }
+  }
+
+  return new Promise((resolve) => {
+    const metadataJson = JSON.stringify(metadata)
+
+    const initReq = https.request({
+      hostname: 'www.googleapis.com',
+      path: '/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Content-Length': Buffer.byteLength(metadataJson),
+        'X-Upload-Content-Length': videoBuffer.length,
+        'X-Upload-Content-Type': 'video/mp4'
+      }
+    }, async (initRes) => {
+      const uploadUrl = initRes.headers['location']
+
+      if (!uploadUrl) {
+        let errorData = ''
+        initRes.on('data', chunk => errorData += chunk)
+        initRes.on('end', () => {
+          resolve({ success: false, error: `Init fehlgeschlagen: ${errorData}` })
+        })
+        return
+      }
+
+      // Upload video
+      const url = new URL(uploadUrl)
+      const uploadReq = https.request({
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'video/mp4',
+          'Content-Length': videoBuffer.length
+        }
+      }, (uploadRes) => {
+        let data = ''
+        uploadRes.on('data', chunk => data += chunk)
+        uploadRes.on('end', () => {
+          try {
+            const result = JSON.parse(data)
+            if (result.id) {
+              resolve({
+                success: true,
+                videoId: result.id,
+                url: `https://www.youtube.com/watch?v=${result.id}`
+              })
+            } else {
+              resolve({ success: false, error: data })
+            }
+          } catch {
+            resolve({ success: false, error: data })
+          }
+        })
+      })
+
+      uploadReq.on('error', (e) => resolve({ success: false, error: e.message }))
+      uploadReq.write(videoBuffer)
+      uploadReq.end()
+    })
+
+    initReq.on('error', (e) => resolve({ success: false, error: e.message }))
+    initReq.write(metadataJson)
+    initReq.end()
+  })
+}
+
+function downloadVideoBuffer(videoUrl: string): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    const url = new URL(videoUrl)
+    const protocol = url.protocol === 'https:' ? https : require('http')
+
+    protocol.get(videoUrl, (res: any) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        // Follow redirect
+        downloadVideoBuffer(res.headers.location).then(resolve)
+        return
+      }
+
+      const chunks: Buffer[] = []
+      res.on('data', (chunk: Buffer) => chunks.push(chunk))
+      res.on('end', () => resolve(Buffer.concat(chunks)))
+      res.on('error', () => resolve(null))
+    }).on('error', () => resolve(null))
   })
 }
 
@@ -468,8 +630,8 @@ export function findLatestVideo(): string | undefined {
 // ============================================================================
 
 export async function getLatestCloudVideo(): Promise<{ url: string; filename: string } | null> {
-  const supabaseUrl = process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co'
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').trim()
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.trim()
 
   if (!supabaseKey) {
     return null
@@ -509,8 +671,8 @@ export async function getLatestCloudVideo(): Promise<{ url: string; filename: st
 }
 
 export async function listCloudVideos(): Promise<Array<{ url: string; filename: string; created_at: string }>> {
-  const supabaseUrl = process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co'
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY
+  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').trim()
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.trim()
 
   if (!supabaseKey) {
     return []
@@ -555,8 +717,8 @@ const HEYGEN_AVATARS = [
 ]
 
 const HEYGEN_VOICES = {
-  english_female: '1bd001e7e50f421d891986aad5158bc8',
-  english_male: 'a0e99841e9ae4758afa565ab2c4c0cae',
+  english_female: 'fb8c5c3f02854c57a4da182d4ed59467', // Ivy
+  english_male: 'f38a635bee7a4d1f9b0a654a31d050d2',   // Chill Brian
   german_female: '6bc024e311ee41dbb66ae24c9c53f0b5',
   german_male: '6f94c8b2a6784a1d92ffbe0339138f31'
 }
@@ -589,7 +751,7 @@ export interface HeyGenVideoResult {
 }
 
 export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS = 'founding'): Promise<HeyGenVideoResult> {
-  const apiKey = process.env.HEYGEN_API_KEY
+  const apiKey = process.env.HEYGEN_API_KEY?.trim()
   if (!apiKey) {
     return { success: false, error: 'HeyGen API Key nicht konfiguriert' }
   }
@@ -615,7 +777,7 @@ export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS =
         value: '#1a1a2e'
       }
     }],
-    dimension: { width: 1920, height: 1080 },
+    dimension: { width: 1280, height: 720 },  // HD (kostenloser Plan)
     aspect_ratio: '16:9'
   })
 
@@ -652,7 +814,7 @@ export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS =
 }
 
 export async function checkHeyGenVideoStatus(videoId: string): Promise<{ status: string; videoUrl?: string }> {
-  const apiKey = process.env.HEYGEN_API_KEY
+  const apiKey = process.env.HEYGEN_API_KEY?.trim()
 
   return new Promise((resolve) => {
     const req = https.request({
@@ -745,17 +907,22 @@ export interface ShareLinks {
   facebook: string
   reddit: string
   instagram: string
+  video?: string
 }
 
-export function generateShareLinks(url?: string, title?: string): ShareLinks {
+export function generateShareLinks(url?: string, title?: string, videoUrl?: string): ShareLinks {
   const shareUrl = url || CONFIG.shareUrl
   const shareTitle = title || 'EVIDENRA - 60% Founding Members Rabatt'
 
+  // Wenn Video-URL vorhanden, diese teilen
+  const urlToShare = videoUrl || shareUrl
+
   return {
-    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
-    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
-    reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(shareTitle)}`,
-    instagram: 'https://www.instagram.com/evidenra/'
+    linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(urlToShare)}`,
+    facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(urlToShare)}`,
+    reddit: `https://www.reddit.com/submit?url=${encodeURIComponent(urlToShare)}&title=${encodeURIComponent(shareTitle)}`,
+    instagram: 'https://www.instagram.com/evidenra/',
+    video: videoUrl
   }
 }
 
@@ -784,21 +951,30 @@ export async function runFullAutomation(options: {
     let videoUrl: string | null = null
 
     // Step 1: Zuerst Cloud-Video suchen (vom PC hochgeladen)
-    const cloudVideo = await getLatestCloudVideo()
-    if (cloudVideo) {
-      console.log('[Werbung] Cloud-Video gefunden:', cloudVideo.filename)
-      videoUrl = cloudVideo.url
+    console.log('[Werbung] Suche Cloud-Video...')
+    try {
+      const cloudVideo = await getLatestCloudVideo()
+      if (cloudVideo) {
+        console.log('[Werbung] Cloud-Video gefunden:', cloudVideo.filename)
+        videoUrl = cloudVideo.url
+      } else {
+        console.log('[Werbung] Kein Cloud-Video in Supabase gefunden')
+      }
+    } catch (cloudErr: any) {
+      console.log('[Werbung] Cloud-Video Fehler:', cloudErr?.message || cloudErr)
     }
 
     // Step 2: Wenn kein Cloud-Video, HeyGen erstellen
     if (!videoUrl) {
-      console.log('[Werbung] Kein Cloud-Video, erstelle HeyGen Video...')
+      console.log('[Werbung] Erstelle HeyGen Video...')
       const topic = options.topic || 'founding'
       const heygenResult = await createHeyGenCloudVideo(topic)
 
       if (!heygenResult.success || !heygenResult.videoId) {
         return { success: false, error: heygenResult.error || 'HeyGen Video-Erstellung fehlgeschlagen' }
       }
+
+      console.log('[Werbung] HeyGen Video gestartet:', heygenResult.videoId)
 
       // Wait for HeyGen video to be ready
       videoUrl = await waitForHeyGenVideo(heygenResult.videoId)
@@ -807,6 +983,7 @@ export async function runFullAutomation(options: {
       }
     }
 
+    console.log('[Werbung] Video URL:', videoUrl)
     result.video = { path: videoUrl }
 
     // Step 3: Post to Twitter
@@ -822,21 +999,28 @@ Try free: evidenra.com
 
 #QualitativeResearch #AI #PhD #Research`
 
+    console.log('[Werbung] Poste auf Twitter...')
     result.twitter = await postToTwitter(tweetText)
+    console.log('[Werbung] Twitter Ergebnis:', result.twitter?.success ? 'OK' : result.twitter?.error)
 
-    // Step 4: Generate share links
-    result.shareLinks = generateShareLinks('https://evidenra.com/pricing')
-    result.shareLinks = {
-      ...result.shareLinks,
-      video: videoUrl
-    } as any
+    // Step 4: YouTube Upload (von Cloud-URL)
+    console.log('[Werbung] Starte YouTube Upload...')
+    try {
+      result.youtube = await uploadToYouTubeFromUrl(videoUrl, options.youtubeTitle)
+      console.log('[Werbung] YouTube:', result.youtube?.success ? result.youtube.url : result.youtube?.error)
+    } catch (ytErr: any) {
+      console.log('[Werbung] YouTube Fehler:', ytErr?.message)
+      result.youtube = { success: false, error: ytErr?.message || 'YouTube Upload fehlgeschlagen' }
+    }
 
-    result.youtube = { success: false, error: `Video-URL: ${videoUrl}` }
+    // Step 5: Generate share links (MIT Video-URL)
+    result.shareLinks = generateShareLinks('https://evidenra.com/pricing', 'EVIDENRA - 60% OFF', videoUrl)
 
-    result.success = result.twitter?.success ?? false
+    result.success = true // Video gefunden = Erfolg
 
   } catch (e: any) {
-    result.error = e.message
+    console.error('[Werbung] Fehler:', e)
+    result.error = e?.message || String(e) || 'Unbekannter Fehler'
   }
 
   return result
