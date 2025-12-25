@@ -70,15 +70,70 @@ function httpsRequest(options: https.RequestOptions, body?: string): Promise<any
 }
 
 // ============================================
-// 1. GENESIS CLOUD - Video erstellen
+// 1. GENESIS CLOUD - Multi-Format Video erstellen
 // ============================================
 
+interface MultiFormatResult {
+  success: boolean
+  script?: string
+  videos?: {
+    youtube?: string   // 16:9 for YouTube/LinkedIn
+    tiktok?: string    // 9:16 for TikTok/Reels
+    instagram?: string // 1:1 for Instagram Feed
+    twitter?: string   // 16:9 for Twitter
+  }
+  error?: string
+}
+
+async function createMultiFormatVideos(): Promise<MultiFormatResult> {
+  console.log('[Autopilot] Step 1: Creating MULTI-FORMAT videos via Genesis Cloud...')
+
+  const payload = JSON.stringify({
+    topic: 'auto',
+    formats: ['youtube', 'tiktok', 'instagram']  // All formats
+  })
+
+  try {
+    const result = await httpsRequest({
+      hostname: new URL(GENESIS_CLOUD_URL).hostname,
+      path: '/create-multi-format',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GENESIS_API_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    }, payload)
+
+    if (result.success && result.results) {
+      const videos: any = {}
+      for (const [format, data] of Object.entries(result.results as Record<string, any>)) {
+        if (data.success && data.url) {
+          videos[format] = data.url
+        }
+      }
+      console.log('[Autopilot] Multi-format videos created:', Object.keys(videos).join(', '))
+      return {
+        success: true,
+        script: result.scriptKey || result.script,
+        videos
+      }
+    } else {
+      const errMsg = typeof result.error === 'string' ? result.error : JSON.stringify(result.error || result)
+      return { success: false, error: errMsg || 'Genesis Cloud error' }
+    }
+  } catch (e: any) {
+    return { success: false, error: e?.message || JSON.stringify(e) || 'Unknown error' }
+  }
+}
+
+// Legacy single-format function for backward compatibility
 async function createVideo(): Promise<{ success: boolean; url?: string; script?: string; avatar?: string; error?: string }> {
   console.log('[Autopilot] Step 1: Creating video via Genesis Cloud...')
 
   const payload = JSON.stringify({
     topic: 'auto',
-    demoType: 'auto'  // Wird täglich rotiert
+    demoType: 'auto'
   })
 
   try {
@@ -509,8 +564,20 @@ async function postToTwitter(text: string, videoUrl?: string): Promise<{ success
 // 4. DISCORD NOTIFICATION (Extended with Social Media Posts)
 // ============================================
 
-async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string): Promise<string> {
+interface VideoFormats {
+  youtube?: string    // 16:9 for YouTube/LinkedIn
+  tiktok?: string     // 9:16 for TikTok/Reels
+  instagram?: string  // 1:1 for Instagram Feed
+}
+
+async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string, videoFormats?: VideoFormats): Promise<string> {
   const shortUrl = 'evidenra.com/pricing'
+
+  // Video URLs for each platform
+  const youtubeVideo = videoFormats?.youtube || youtubeUrl
+  const tiktokVideo = videoFormats?.tiktok || youtubeVideo
+  const instagramVideo = videoFormats?.instagram || youtubeVideo
+  const linkedinVideo = youtubeVideo  // LinkedIn uses 16:9 like YouTube
 
   // Use Claude to generate unique posts based on the video script
   try {
@@ -523,46 +590,58 @@ async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string)
       },
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
-        max_tokens: 2000,
+        max_tokens: 2500,
         messages: [{
           role: 'user',
           content: `Du bist ein Social Media Marketing Experte für EVIDENRA, ein KI-Tool für qualitative Forschungsanalyse.
 
 Video-Script des heutigen Videos: "${videoScript}"
-YouTube Link: ${youtubeUrl}
 Website: ${shortUrl}
+
+VIDEO-DATEIEN (WICHTIG - jede Plattform hat ihr eigenes Format!):
+- YouTube (16:9): ${youtubeUrl}
+- TikTok (9:16 Hochformat): ${tiktokVideo}
+- Instagram (1:1 Quadrat): ${instagramVideo}
+- LinkedIn (16:9): ${linkedinVideo}
 
 Erstelle EINZIGARTIGE, FRISCHE Posts für heute. Beziehe dich auf das Video-Script!
 
 Format (exakt so):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📸 **INSTAGRAM** (Copy & Paste):
+📹 Video-Datei: ${instagramVideo}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [Kreativer Post mit Emojis, 3-5 Sätze, dann "Link in bio", dann 10 relevante Hashtags]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎵 **TIKTOK** (Copy & Paste):
+📹 Video-Datei: ${tiktokVideo}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [POV-Style oder trendy Format, kurz und catchy, "Link in bio for 60% off!", dann 8 Hashtags mit Tok-Varianten]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💼 **LINKEDIN** (Copy & Paste):
+📹 Video-Datei: ${linkedinVideo}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [Professioneller Post, Problem-Lösung Format, mit Bullet Points, endet mit Frage für Engagement, 5 Hashtags]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📘 **FACEBOOK** (Copy & Paste):
+📹 Video-Datei: ${youtubeVideo}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Freundlicher, persönlicher Ton, mit Emojis, YouTube Link einbauen]
+[Freundlicher, persönlicher Ton, mit Emojis, YouTube Link einbauen: ${youtubeUrl}]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔴 **REDDIT** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 **Title:** [Catchy aber nicht clickbait]
 **Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
-**Post:** [Authentisch, helpful, nicht zu werblich, YouTube Link am Ende]
+**Post:** [Authentisch, helpful, nicht zu werblich, YouTube Link am Ende: ${youtubeUrl}]
 
-WICHTIG: Jeder Post muss ANDERS sein und zum heutigen Video-Script passen!`
+WICHTIG:
+- Jeder Post muss ANDERS sein und zum heutigen Video-Script passen!
+- Inkludiere die Video-Datei URLs wie oben angegeben
+- Instagram bekommt 1:1 Format, TikTok bekommt 9:16 Format!`
         }]
       })
     })
@@ -640,16 +719,25 @@ Demo: ${youtubeUrl}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
 }
 
-async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string): Promise<void> {
+async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string, videoFormats?: VideoFormats): Promise<void> {
   console.log('[Autopilot] Step 4: Discord notification...')
 
-  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName)
+  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
+
+  // Build video links section with all formats
+  let videoLinks = `📹 **Video-Dateien:**`
+  if (videoFormats?.youtube) videoLinks += `\n   • YouTube/LinkedIn (16:9): ${videoFormats.youtube}`
+  if (videoFormats?.tiktok) videoLinks += `\n   • TikTok/Reels (9:16): ${videoFormats.tiktok}`
+  if (videoFormats?.instagram) videoLinks += `\n   • Instagram (1:1): ${videoFormats.instagram}`
+  if (!videoFormats?.youtube && !videoFormats?.tiktok && !videoFormats?.instagram) {
+    videoLinks = `📹 **Video-Datei:** ${videoUrl}`
+  }
 
   const message = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
 
 📺 **YouTube:** ${youtubeUrl}
 🐦 **Twitter:** ${twitterUrl}
-📹 **Video-Datei:** ${videoUrl}
+${videoLinks}
 
 ${socialPosts}`
 
@@ -679,7 +767,7 @@ ${socialPosts}`
 // 5. TELEGRAM NOTIFICATION
 // ============================================
 
-async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string): Promise<void> {
+async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string, videoFormats?: VideoFormats): Promise<void> {
   console.log('[Autopilot] Step 5: Telegram notification...')
 
   if (!TELEGRAM_BOT_TOKEN) {
@@ -687,8 +775,17 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
     return
   }
 
-  // Generate AI-based social media posts
-  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName)
+  // Generate AI-based social media posts with format-specific video URLs
+  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
+
+  // Build video links for all formats
+  let videoLinks = `📹 Video-Dateien:`
+  if (videoFormats?.youtube) videoLinks += `\n   • YouTube/LinkedIn (16:9): ${videoFormats.youtube}`
+  if (videoFormats?.tiktok) videoLinks += `\n   • TikTok/Reels (9:16): ${videoFormats.tiktok}`
+  if (videoFormats?.instagram) videoLinks += `\n   • Instagram (1:1): ${videoFormats.instagram}`
+  if (!videoFormats?.youtube && !videoFormats?.tiktok && !videoFormats?.instagram) {
+    videoLinks = `📹 Video: ${videoUrl}`
+  }
 
   // Plain text messages (no Markdown to avoid parsing errors)
   const messages = [
@@ -696,7 +793,7 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
 
 📺 YouTube: ${youtubeUrl}
 🐦 Twitter: ${twitterUrl}
-📹 Video: ${videoUrl}`,
+${videoLinks}`,
     socialPosts
   ]
 
@@ -735,10 +832,15 @@ export async function POST(request: Request) {
 
   // Check for test mode with existing video
   let testVideoUrl: string | null = null
+  let testVideoFormats: VideoFormats | null = null
+  let useMultiFormat = true  // Default: create multi-format videos
   try {
     const body = await request.json()
     testVideoUrl = body.testVideoUrl || null
+    testVideoFormats = body.testVideoFormats || null
+    useMultiFormat = body.useMultiFormat !== false  // Default true
     console.log('[Autopilot] Test mode:', testVideoUrl ? 'YES' : 'NO')
+    console.log('[Autopilot] Multi-format:', useMultiFormat ? 'YES' : 'NO')
   } catch {
     // No body or invalid JSON - normal mode
   }
@@ -746,26 +848,56 @@ export async function POST(request: Request) {
   const results: any = {
     timestamp: new Date().toISOString(),
     video: null,
+    videoFormats: null,
     youtube: null,
     twitter: null,
     notifications: { discord: false, telegram: false }
   }
 
   try {
-    // 1. Create Video (or use test video)
-    let videoResult: { success: boolean; url?: string; script?: string; avatar?: string; error?: string }
+    // 1. Create Video(s) - Multi-format or single
+    let videoUrl: string | undefined
+    let videoFormats: VideoFormats | undefined
+    let videoScript: string = 'EVIDENRA Demo'
 
     if (testVideoUrl) {
+      // Test mode with existing video(s)
       console.log('[Autopilot] Using test video:', testVideoUrl)
-      videoResult = { success: true, url: testVideoUrl, script: 'test', avatar: 'test' }
-    } else {
-      videoResult = await createVideo()
-    }
-    results.video = videoResult
+      videoUrl = testVideoUrl
+      videoFormats = testVideoFormats || undefined
+      videoScript = 'test'
+      results.video = { success: true, url: testVideoUrl }
+    } else if (useMultiFormat) {
+      // Production mode: Create all formats
+      console.log('[Autopilot] Creating MULTI-FORMAT videos...')
+      const multiResult = await createMultiFormatVideos()
+      results.video = multiResult
 
-    if (!videoResult.success || !videoResult.url) {
-      const errStr = typeof videoResult.error === 'string' ? videoResult.error : JSON.stringify(videoResult.error)
-      throw new Error(errStr || 'Video creation failed')
+      if (!multiResult.success || !multiResult.videos) {
+        const errStr = typeof multiResult.error === 'string' ? multiResult.error : JSON.stringify(multiResult.error)
+        throw new Error(errStr || 'Multi-format video creation failed')
+      }
+
+      videoFormats = multiResult.videos
+      videoUrl = multiResult.videos.youtube || Object.values(multiResult.videos)[0]
+      videoScript = multiResult.script || 'EVIDENRA Demo'
+      results.videoFormats = videoFormats
+    } else {
+      // Legacy single-format mode
+      const videoResult = await createVideo()
+      results.video = videoResult
+
+      if (!videoResult.success || !videoResult.url) {
+        const errStr = typeof videoResult.error === 'string' ? videoResult.error : JSON.stringify(videoResult.error)
+        throw new Error(errStr || 'Video creation failed')
+      }
+
+      videoUrl = videoResult.url
+      videoScript = videoResult.script || 'EVIDENRA Demo'
+    }
+
+    if (!videoUrl) {
+      throw new Error('No video URL available')
     }
 
     // Generate title based on script
@@ -773,8 +905,9 @@ export async function POST(request: Request) {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
     const title = `EVIDENRA AI Research Tool | ${dayNames[today.getDay()]} Demo | 60% OFF`
 
-    // 2. Upload to YouTube
-    const youtubeResult = await uploadToYouTube(videoResult.url, title)
+    // 2. Upload to YouTube (use YouTube format if available)
+    const youtubeVideoUrl = videoFormats?.youtube || videoUrl
+    const youtubeResult = await uploadToYouTube(youtubeVideoUrl, title)
     results.youtube = youtubeResult
 
     // 3. Post to Twitter (text + link, video requires paid API tier)
@@ -787,28 +920,30 @@ AI-powered qualitative research made easy:
 
 60% OFF: evidenra.com/pricing
 
-📺 Watch: ${youtubeResult.youtubeUrl || videoResult.url}
+📺 Watch: ${youtubeResult.youtubeUrl || videoUrl}
 
 #QualitativeResearch #AI #PhD #Academia`
 
     const twitterResult = await postToTwitter(tweetText)
     results.twitter = twitterResult
 
-    // 4. Discord Notification (with all social media post templates)
+    // 4. Discord Notification (with all format-specific video links)
     await notifyDiscord(
       youtubeResult.youtubeUrl || '',
       twitterResult.tweetUrl || '',
-      videoResult.url || '',
-      videoResult.script || 'EVIDENRA Demo'
+      videoUrl,
+      videoScript,
+      videoFormats  // Pass all video formats
     )
     results.notifications.discord = true
 
-    // 5. Telegram Notification (with all social media post templates)
+    // 5. Telegram Notification (with all format-specific video links)
     await notifyTelegram(
       youtubeResult.youtubeUrl || '',
       twitterResult.tweetUrl || '',
-      videoResult.url || '',
-      videoResult.script || 'EVIDENRA Demo'
+      videoUrl,
+      videoScript,
+      videoFormats  // Pass all video formats
     )
     results.notifications.telegram = true
 
