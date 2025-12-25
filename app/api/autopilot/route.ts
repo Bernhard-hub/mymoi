@@ -749,10 +749,11 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
   }
 
   console.log('[Autopilot] Discord: Found', platformSections.length, 'platform sections')
+  console.log('[Autopilot] Discord: First section preview:', platformSections[0]?.substring(0, 50))
 
   try {
     // Send header first
-    await fetch(DISCORD_WEBHOOK, {
+    const headerResponse = await fetch(DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -761,26 +762,36 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
         content: headerMsg
       })
     })
-    await new Promise(r => setTimeout(r, 1000))
+    console.log('[Autopilot] Discord: Header sent, status:', headerResponse.status)
+    await new Promise(r => setTimeout(r, 1500))
 
-    // Send each platform as SEPARATE message
-    for (const section of platformSections) {
+    // Send each platform as SEPARATE message - ONE BY ONE!
+    let sentCount = 0
+    for (let i = 0; i < platformSections.length; i++) {
+      const section = platformSections[i]
       const trimmed = section.trim()
-      if (trimmed.length < 30) continue
+      if (trimmed.length < 30) {
+        console.log('[Autopilot] Discord: Skipping short section', i)
+        continue
+      }
 
-      await fetch(DISCORD_WEBHOOK, {
+      const msgContent = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
+      console.log('[Autopilot] Discord: Sending message', i+1, 'of', platformSections.length, '...')
+
+      const msgResponse = await fetch(DISCORD_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: 'EVIDENRA Autopilot',
           avatar_url: 'https://evidenra.com/logo.png',
-          content: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
+          content: msgContent
         })
       })
-      console.log('[Autopilot] Discord: Sent platform message:', trimmed.substring(0, 30))
-      await new Promise(r => setTimeout(r, 1000))
+      console.log('[Autopilot] Discord: Message', i+1, 'sent, status:', msgResponse.status)
+      sentCount++
+      await new Promise(r => setTimeout(r, 1500))
     }
-    console.log('[Autopilot] Discord: All', platformSections.length, 'platform messages sent separately')
+    console.log('[Autopilot] Discord: Successfully sent', sentCount, 'separate platform messages')
   } catch (e) {
     console.log('[Autopilot] Discord error:', e)
   }
