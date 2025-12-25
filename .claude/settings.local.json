@@ -37,7 +37,10 @@
       "Bash(unzip:*)",
       "Bash(dir:*)",
       "WebFetch(domain:mymoi.app)",
-      "WebFetch(domain:mymoi-bot.vercel.app)"
+      "WebFetch(domain:mymoi-bot.vercel.app)",
+      "Bash(git checkout:*)",
+      "Bash(taskkill:*)",
+      "Bash(powershell -Command \"Copy-Item -Path ''/tmp/genesis-update.ts'' -Destination ''D:/MYMOI/app/api/genesis/route.ts'' -Force\")"
     ],
     "deny": [],
     "ask": []

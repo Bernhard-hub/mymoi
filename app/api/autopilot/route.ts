@@ -21,9 +21,9 @@ const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-s
 // Discord Webhook
 const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1449139420052852920/oZVS25FIQkarF9snGf1QB-cXZQNuZPNHGLfYhRE07pJ64zRFsnQz5NSYsvjVKfEIPQJu'
 
-// Telegram Bot
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7707aborting23:AAHabcdefg'
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '123456789'
+// Telegram Bot - EVIDENRA Marketing
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8475164997:AAHTyTQQK6-8dGfXbip7RGAxdmsoc7yY95c'
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7804985180'
 
 // Twitter Config - Updated with Read+Write permissions
 const TWITTER_CONFIG = {
@@ -336,7 +336,7 @@ async function notifyDiscord(message: string): Promise<void> {
 async function notifyTelegram(message: string): Promise<void> {
   console.log('[Autopilot] Step 5: Telegram notification...')
 
-  if (!TELEGRAM_BOT_TOKEN || TELEGRAM_BOT_TOKEN.includes('aborting')) {
+  if (!TELEGRAM_BOT_TOKEN) {
     console.log('[Autopilot] Telegram not configured')
     return
   }
