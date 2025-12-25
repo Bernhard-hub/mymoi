@@ -2,13 +2,14 @@
  * EVIDENRA Autopilot - Vollautomatisches Marketing
  * ================================================
  * Täglich aufrufen via Cron: POST /api/autopilot
+ * Updated: 2025-12-25 23:45 - Separate platform messages v2
  *
  * Flow:
  * 1. Genesis Cloud erstellt Video (Website + Avatar)
  * 2. Upload zu YouTube
  * 3. Post auf Twitter/X
- * 4. Discord Notification
- * 5. Telegram Notification
+ * 4. Discord Notification (SEPARATE messages per platform!)
+ * 5. Telegram Notification (SEPARATE messages per platform!)
  */
 
 import { NextResponse } from 'next/server'
@@ -735,8 +736,19 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
 • TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
 • Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
 
-  // Split posts by platform separator (━━━)
-  const platformSections = socialPosts.split(/━━━+/).filter(s => s.trim().length > 50)
+  // Split by platform headers (📸 INSTAGRAM, 🎵 TIKTOK, 💼 LINKEDIN, 📘 FACEBOOK, 🔴 REDDIT)
+  const platformPattern = /(📸\s*\*?\*?INSTAGRAM|🎵\s*\*?\*?TIKTOK|💼\s*\*?\*?LINKEDIN|📘\s*\*?\*?FACEBOOK|🔴\s*\*?\*?REDDIT)/gi
+  const platformSections: string[] = []
+
+  // Find all platform sections
+  const matches = socialPosts.split(platformPattern)
+  for (let i = 1; i < matches.length; i += 2) {
+    if (matches[i] && matches[i+1]) {
+      platformSections.push(matches[i] + matches[i+1])
+    }
+  }
+
+  console.log('[Autopilot] Discord: Found', platformSections.length, 'platform sections')
 
   try {
     // Send header first
@@ -749,12 +761,12 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
         content: headerMsg
       })
     })
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 1000))
 
-    // Send each platform as separate message
+    // Send each platform as SEPARATE message
     for (const section of platformSections) {
       const trimmed = section.trim()
-      if (trimmed.length < 20) continue
+      if (trimmed.length < 30) continue
 
       await fetch(DISCORD_WEBHOOK, {
         method: 'POST',
@@ -765,9 +777,10 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
           content: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
         })
       })
-      await new Promise(r => setTimeout(r, 800))
+      console.log('[Autopilot] Discord: Sent platform message:', trimmed.substring(0, 30))
+      await new Promise(r => setTimeout(r, 1000))
     }
-    console.log('[Autopilot] Discord: All platform messages sent separately')
+    console.log('[Autopilot] Discord: All', platformSections.length, 'platform messages sent separately')
   } catch (e) {
     console.log('[Autopilot] Discord error:', e)
   }
@@ -799,8 +812,18 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
 • TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
 • Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
 
-  // Split posts by platform separator (━━━)
-  const platformSections = socialPosts.split(/━━━+/).filter(s => s.trim().length > 50)
+  // Split by platform headers (📸 INSTAGRAM, 🎵 TIKTOK, 💼 LINKEDIN, 📘 FACEBOOK, 🔴 REDDIT)
+  const platformPattern = /(📸\s*\*?\*?INSTAGRAM|🎵\s*\*?\*?TIKTOK|💼\s*\*?\*?LINKEDIN|📘\s*\*?\*?FACEBOOK|🔴\s*\*?\*?REDDIT)/gi
+  const platformSections: string[] = []
+
+  const matches = socialPosts.split(platformPattern)
+  for (let i = 1; i < matches.length; i += 2) {
+    if (matches[i] && matches[i+1]) {
+      platformSections.push(matches[i] + matches[i+1])
+    }
+  }
+
+  console.log('[Autopilot] Telegram: Found', platformSections.length, 'platform sections')
 
   try {
     // Send header first
@@ -809,12 +832,12 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: headerMsg })
     })
-    await new Promise(r => setTimeout(r, 800))
+    await new Promise(r => setTimeout(r, 1000))
 
-    // Send each platform as separate message
+    // Send each platform as SEPARATE message
     for (const section of platformSections) {
       const trimmed = section.trim()
-      if (trimmed.length < 20) continue
+      if (trimmed.length < 30) continue
 
       const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -825,10 +848,10 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
         })
       })
       const result = await response.json()
-      console.log('[Autopilot] Telegram platform msg sent:', result.ok)
-      await new Promise(r => setTimeout(r, 800))
+      console.log('[Autopilot] Telegram: Sent', trimmed.substring(0, 20), '- ok:', result.ok)
+      await new Promise(r => setTimeout(r, 1000))
     }
-    console.log('[Autopilot] Telegram: All platform messages sent separately')
+    console.log('[Autopilot] Telegram: All', platformSections.length, 'platform messages sent separately')
   } catch (e: any) {
     console.log('[Autopilot] Telegram error:', e?.message || e)
   }
