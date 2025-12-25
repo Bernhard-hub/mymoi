@@ -1061,7 +1061,7 @@ export async function runFullAutomation(options: {
     }
 
     console.log('[Werbung] Video URL:', videoUrl)
-    result.video = { path: videoUrl }
+    result.video = { path: videoUrl || '' }
 
     // Step 3: Post to Twitter
     const tweetText = `🚀 EVIDENRA - AI-Powered Qualitative Research
