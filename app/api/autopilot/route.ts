@@ -25,12 +25,12 @@ const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1449139420052852920/oZ
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7707aborting23:AAHabcdefg'
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '123456789'
 
-// Twitter Config
+// Twitter Config - Updated with Read+Write permissions
 const TWITTER_CONFIG = {
   apiKey: '5tkc2DtB1FNjjWHQ6oDK3kUgN',
   apiSecretKey: 'i23uBMrdDVHEZyrrhdNlFoqMzqU4p5F0SjfQpszB6iaVZDUS0Z',
-  accessToken: '2003734522517663745-BvOdRewI82rD1uVKgCvSiY3ws94V4e',
-  accessTokenSecret: 'Q0HmajumQJDlQg9JwIWMnOr8tlSrlp7geguy0aN0nh28n'
+  accessToken: '2003734522517663745-aOrEHqGgyvoi3hagsoYHxhhO1856MK',
+  accessTokenSecret: 'bm0I8xn28fewdmssnvQJAd5QWtFNkezYKlogxx7u7sNlQ'
 }
 
 // YouTube Config (from env) - trim to remove any whitespace
