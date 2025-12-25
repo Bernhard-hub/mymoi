@@ -571,16 +571,24 @@ interface VideoFormats {
   instagram?: string  // 1:1 for Instagram Feed
 }
 
-async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string, videoFormats?: VideoFormats): Promise<string> {
+interface PlatformPosts {
+  instagram: string
+  tiktok: string
+  linkedin: string
+  facebook: string
+  reddit: string
+}
+
+async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string, videoFormats?: VideoFormats): Promise<PlatformPosts> {
   const shortUrl = 'evidenra.com/pricing'
 
   // Video URLs for each platform
   const youtubeVideo = videoFormats?.youtube || youtubeUrl
   const tiktokVideo = videoFormats?.tiktok || youtubeVideo
   const instagramVideo = videoFormats?.instagram || youtubeVideo
-  const linkedinVideo = youtubeVideo  // LinkedIn uses 16:9 like YouTube
+  const linkedinVideo = youtubeVideo
 
-  // Use Claude to generate unique posts based on the video script
+  // Generate posts as JSON for reliable parsing
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -594,204 +602,131 @@ async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string,
         max_tokens: 2500,
         messages: [{
           role: 'user',
-          content: `Du bist ein Social Media Marketing Experte für EVIDENRA, ein KI-Tool für qualitative Forschungsanalyse.
+          content: `Du bist ein Social Media Marketing Experte für EVIDENRA.
 
-Video-Script des heutigen Videos: "${videoScript}"
+Video-Script: "${videoScript}"
 Website: ${shortUrl}
 
-VIDEO-DATEIEN (WICHTIG - jede Plattform hat ihr eigenes Format!):
-- YouTube (16:9): ${youtubeUrl}
-- TikTok (9:16 Hochformat): ${tiktokVideo}
-- Instagram (1:1 Quadrat): ${instagramVideo}
+VIDEO URLs:
+- Instagram (1:1): ${instagramVideo}
+- TikTok (9:16): ${tiktokVideo}
 - LinkedIn (16:9): ${linkedinVideo}
+- YouTube: ${youtubeUrl}
 
-Erstelle EINZIGARTIGE, FRISCHE Posts für heute. Beziehe dich auf das Video-Script!
+Antworte NUR mit validem JSON (kein anderer Text!):
+{
+  "instagram": "📸 INSTAGRAM\\n📹 Video: ${instagramVideo}\\n\\n[3-5 Sätze mit Emojis]\\n\\nLink in bio 👆\\n\\n#QualitativeResearch #PhD #Academia",
+  "tiktok": "🎵 TIKTOK\\n📹 Video: ${tiktokVideo}\\n\\n[POV-Style Post]\\n\\nLink in bio for 60% off! 🔥\\n\\n#PhDTok #ThesisTok",
+  "linkedin": "💼 LINKEDIN\\n📹 Video: ${linkedinVideo}\\n\\n[Professioneller Post mit Bullets]\\n\\n#QualitativeResearch #Research",
+  "facebook": "📘 FACEBOOK\\n📹 Video: ${youtubeVideo}\\n\\n[Freundlicher Post]\\n\\nSchau hier: ${youtubeUrl}",
+  "reddit": "🔴 REDDIT\\nTitle: [Catchy Title]\\nSubreddits: r/QualitativeResearch, r/PhD\\n\\n[Authentischer Post]\\n\\nDemo: ${youtubeUrl}"
+}
 
-Format (exakt so):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📸 **INSTAGRAM** (Copy & Paste):
-📹 Video-Datei: ${instagramVideo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Kreativer Post mit Emojis, 3-5 Sätze, dann "Link in bio", dann 10 relevante Hashtags]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎵 **TIKTOK** (Copy & Paste):
-📹 Video-Datei: ${tiktokVideo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[POV-Style oder trendy Format, kurz und catchy, "Link in bio for 60% off!", dann 8 Hashtags mit Tok-Varianten]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💼 **LINKEDIN** (Copy & Paste):
-📹 Video-Datei: ${linkedinVideo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Professioneller Post, Problem-Lösung Format, mit Bullet Points, endet mit Frage für Engagement, 5 Hashtags]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📘 **FACEBOOK** (Copy & Paste):
-📹 Video-Datei: ${youtubeVideo}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Freundlicher, persönlicher Ton, mit Emojis, YouTube Link einbauen: ${youtubeUrl}]
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 **REDDIT** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Title:** [Catchy aber nicht clickbait]
-**Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
-**Post:** [Authentisch, helpful, nicht zu werblich, YouTube Link am Ende: ${youtubeUrl}]
-
-WICHTIG:
-- Jeder Post muss ANDERS sein und zum heutigen Video-Script passen!
-- Inkludiere die Video-Datei URLs wie oben angegeben
-- Instagram bekommt 1:1 Format, TikTok bekommt 9:16 Format!`
+WICHTIG: NUR JSON, keine Erklärung!`
         }]
       })
     })
 
     const result = await response.json()
     if (result.content?.[0]?.text) {
-      return result.content[0].text
+      try {
+        // Parse the JSON response
+        const jsonText = result.content[0].text.trim()
+        // Handle case where response has markdown code block
+        const cleanJson = jsonText.replace(/```json\n?|\n?```/g, '').trim()
+        const parsed = JSON.parse(cleanJson)
+        console.log('[Autopilot] AI posts parsed successfully')
+        return parsed as PlatformPosts
+      } catch (parseError) {
+        console.log('[Autopilot] JSON parse error, using fallback')
+      }
     }
   } catch (e) {
     console.log('[Autopilot] Claude API error, using fallback:', e)
   }
 
-  // Fallback if Claude API fails
-  return `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📸 **INSTAGRAM** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬 New EVIDENRA demo just dropped!
-
-${videoScript}
-
-✅ Try it free for 30 days
-✅ 60% founding member discount
-
-Link in bio 👆
-
-#QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎵 **TIKTOK** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${videoScript}
-
-Link in bio for 60% off! 🔥
-
-#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #StudentLife
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💼 **LINKEDIN** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬 ${videoScript}
-
-EVIDENRA transforms qualitative research with AI-powered analysis.
-
-→ 7 expert AI personas
-→ Multi-perspective coding
-→ Publication-ready exports
-
-60% off for founding members: ${shortUrl}
-
-#QualitativeResearch #Research #AI #Academia #PhD
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📘 **FACEBOOK** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎬 New demo video!
-
-${videoScript}
-
-Watch here: ${youtubeUrl}
-
-60% off: ${shortUrl}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔴 **REDDIT** (Copy & Paste):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Title:** ${videoScript.substring(0, 50)}...
-
-**Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
-
-**Post:**
-${videoScript}
-
-Demo: ${youtubeUrl}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+  // Fallback posts
+  return {
+    instagram: `📸 **INSTAGRAM**\n📹 Video: ${instagramVideo}\n\n🔬 EVIDENRA revolutioniert qualitative Forschung!\n\n${videoScript}\n\n✅ 30 Tage kostenlos testen\n✅ 60% Founding Member Rabatt\n\nLink in bio 👆\n\n#QualitativeResearch #PhD #Academia #AI #Dissertation`,
+    tiktok: `🎵 **TIKTOK**\n📹 Video: ${tiktokVideo}\n\nPOV: Deine Thesis schreibt sich fast von selbst 📚✨\n\n${videoScript}\n\nLink in bio for 60% off! 🔥\n\n#PhDTok #ThesisTok #AcademiaTok #StudentLife`,
+    linkedin: `💼 **LINKEDIN**\n📹 Video: ${linkedinVideo}\n\n🔬 ${videoScript}\n\nEVIDENRA transformiert qualitative Forschung:\n→ 7 Expert AI Personas\n→ Multi-Perspective Coding\n→ Publication-ready Exports\n\n60% off: ${shortUrl}\n\n#QualitativeResearch #AI #Academia`,
+    facebook: `📘 **FACEBOOK**\n📹 Video: ${youtubeVideo}\n\n🎬 Neues Demo Video!\n\n${videoScript}\n\nHier anschauen: ${youtubeUrl}\n\n60% Rabatt: ${shortUrl}`,
+    reddit: `🔴 **REDDIT**\n\n**Title:** ${videoScript.substring(0, 60)}\n**Subreddits:** r/QualitativeResearch, r/AskAcademia, r/PhD\n\n${videoScript}\n\nDemo: ${youtubeUrl}`
+  }
 }
 
 async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string, videoFormats?: VideoFormats): Promise<void> {
-  console.log('[Autopilot] Step 4: Discord notification...')
+  console.log('[Autopilot] Step 4: Discord notification - SEPARATE MESSAGES!')
 
-  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
+  // Generate platform posts as structured object
+  const posts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
 
-  // Erste Nachricht: Links
+  // Header message first
   const headerMsg = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
 
 📺 **YouTube:** ${youtubeUrl}
 🐦 **Twitter:** ${twitterUrl}
 
-📹 **Video-Dateien zum Download:**
-• YouTube/LinkedIn (16:9): ${videoFormats?.youtube || videoUrl}
-• TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
-• Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
-
-  // Split by platform headers (📸 INSTAGRAM, 🎵 TIKTOK, 💼 LINKEDIN, 📘 FACEBOOK, 🔴 REDDIT)
-  const platformPattern = /(📸\s*\*?\*?INSTAGRAM|🎵\s*\*?\*?TIKTOK|💼\s*\*?\*?LINKEDIN|📘\s*\*?\*?FACEBOOK|🔴\s*\*?\*?REDDIT)/gi
-  const platformSections: string[] = []
-
-  // Find all platform sections
-  const matches = socialPosts.split(platformPattern)
-  for (let i = 1; i < matches.length; i += 2) {
-    if (matches[i] && matches[i+1]) {
-      platformSections.push(matches[i] + matches[i+1])
-    }
-  }
-
-  console.log('[Autopilot] Discord: Found', platformSections.length, 'platform sections')
-  console.log('[Autopilot] Discord: First section preview:', platformSections[0]?.substring(0, 50))
+📹 **Video-Dateien:**
+• YouTube/LinkedIn: ${videoFormats?.youtube || videoUrl}
+• TikTok/Reels: ${videoFormats?.tiktok || videoUrl}
+• Instagram: ${videoFormats?.instagram || videoUrl}`
 
   try {
-    // Send header first
-    const headerResponse = await fetch(DISCORD_WEBHOOK, {
+    // 1. Send header
+    await fetch(DISCORD_WEBHOOK, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: 'EVIDENRA Autopilot',
-        avatar_url: 'https://evidenra.com/logo.png',
-        content: headerMsg
-      })
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: headerMsg })
     })
-    console.log('[Autopilot] Discord: Header sent, status:', headerResponse.status)
-    await new Promise(r => setTimeout(r, 1500))
+    console.log('[Autopilot] Discord: Header sent')
+    await new Promise(r => setTimeout(r, 2000))
 
-    // Send each platform as SEPARATE message - ONE BY ONE!
-    let sentCount = 0
-    for (let i = 0; i < platformSections.length; i++) {
-      const section = platformSections[i]
-      const trimmed = section.trim()
-      if (trimmed.length < 30) {
-        console.log('[Autopilot] Discord: Skipping short section', i)
-        continue
-      }
+    // 2. Send Instagram (separate message)
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: `━━━━━━━━━━━━━━━━━━━━\n${posts.instagram}` })
+    })
+    console.log('[Autopilot] Discord: Instagram sent')
+    await new Promise(r => setTimeout(r, 2000))
 
-      const msgContent = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
-      console.log('[Autopilot] Discord: Sending message', i+1, 'of', platformSections.length, '...')
+    // 3. Send TikTok (separate message)
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: `━━━━━━━━━━━━━━━━━━━━\n${posts.tiktok}` })
+    })
+    console.log('[Autopilot] Discord: TikTok sent')
+    await new Promise(r => setTimeout(r, 2000))
 
-      const msgResponse = await fetch(DISCORD_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: 'EVIDENRA Autopilot',
-          avatar_url: 'https://evidenra.com/logo.png',
-          content: msgContent
-        })
-      })
-      console.log('[Autopilot] Discord: Message', i+1, 'sent, status:', msgResponse.status)
-      sentCount++
-      await new Promise(r => setTimeout(r, 1500))
-    }
-    console.log('[Autopilot] Discord: Successfully sent', sentCount, 'separate platform messages')
+    // 4. Send LinkedIn (separate message)
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: `━━━━━━━━━━━━━━━━━━━━\n${posts.linkedin}` })
+    })
+    console.log('[Autopilot] Discord: LinkedIn sent')
+    await new Promise(r => setTimeout(r, 2000))
+
+    // 5. Send Facebook (separate message)
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: `━━━━━━━━━━━━━━━━━━━━\n${posts.facebook}` })
+    })
+    console.log('[Autopilot] Discord: Facebook sent')
+    await new Promise(r => setTimeout(r, 2000))
+
+    // 6. Send Reddit (separate message)
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: 'EVIDENRA Autopilot', content: `━━━━━━━━━━━━━━━━━━━━\n${posts.reddit}` })
+    })
+    console.log('[Autopilot] Discord: Reddit sent')
+
+    console.log('[Autopilot] Discord: All 6 messages sent SEPARATELY!')
   } catch (e) {
     console.log('[Autopilot] Discord error:', e)
   }
@@ -802,67 +737,82 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
 // ============================================
 
 async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string, videoFormats?: VideoFormats): Promise<void> {
-  console.log('[Autopilot] Step 5: Telegram notification...')
+  console.log('[Autopilot] Step 5: Telegram notification - SEPARATE MESSAGES!')
 
   if (!TELEGRAM_BOT_TOKEN) {
     console.log('[Autopilot] Telegram not configured')
     return
   }
 
-  // Generate AI-based social media posts with format-specific video URLs
-  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
+  // Generate platform posts as structured object
+  const posts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
 
-  // Header message with links
+  // Header message
   const headerMsg = `🎬 EVIDENRA AUTOPILOT - NEUES VIDEO
 
 📺 YouTube: ${youtubeUrl}
 🐦 Twitter: ${twitterUrl}
 
-📹 Video-Dateien zum Download:
-• YouTube/LinkedIn (16:9): ${videoFormats?.youtube || videoUrl}
-• TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
-• Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
-
-  // Split by platform headers (📸 INSTAGRAM, 🎵 TIKTOK, 💼 LINKEDIN, 📘 FACEBOOK, 🔴 REDDIT)
-  const platformPattern = /(📸\s*\*?\*?INSTAGRAM|🎵\s*\*?\*?TIKTOK|💼\s*\*?\*?LINKEDIN|📘\s*\*?\*?FACEBOOK|🔴\s*\*?\*?REDDIT)/gi
-  const platformSections: string[] = []
-
-  const matches = socialPosts.split(platformPattern)
-  for (let i = 1; i < matches.length; i += 2) {
-    if (matches[i] && matches[i+1]) {
-      platformSections.push(matches[i] + matches[i+1])
-    }
-  }
-
-  console.log('[Autopilot] Telegram: Found', platformSections.length, 'platform sections')
+📹 Video-Dateien:
+• YouTube/LinkedIn: ${videoFormats?.youtube || videoUrl}
+• TikTok/Reels: ${videoFormats?.tiktok || videoUrl}
+• Instagram: ${videoFormats?.instagram || videoUrl}`
 
   try {
-    // Send header first
+    // 1. Header
     await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: headerMsg })
     })
-    await new Promise(r => setTimeout(r, 1000))
+    console.log('[Autopilot] Telegram: Header sent')
+    await new Promise(r => setTimeout(r, 1500))
 
-    // Send each platform as SEPARATE message
-    for (const section of platformSections) {
-      const trimmed = section.trim()
-      if (trimmed.length < 30) continue
+    // 2. Instagram
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: `━━━━━━━━━━━━━━━━━━━━\n${posts.instagram}` })
+    })
+    console.log('[Autopilot] Telegram: Instagram sent')
+    await new Promise(r => setTimeout(r, 1500))
 
-      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: `━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
-        })
-      })
-      const result = await response.json()
-      console.log('[Autopilot] Telegram: Sent', trimmed.substring(0, 20), '- ok:', result.ok)
-      await new Promise(r => setTimeout(r, 1000))
-    }
-    console.log('[Autopilot] Telegram: All', platformSections.length, 'platform messages sent separately')
+    // 3. TikTok
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: `━━━━━━━━━━━━━━━━━━━━\n${posts.tiktok}` })
+    })
+    console.log('[Autopilot] Telegram: TikTok sent')
+    await new Promise(r => setTimeout(r, 1500))
+
+    // 4. LinkedIn
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: `━━━━━━━━━━━━━━━━━━━━\n${posts.linkedin}` })
+    })
+    console.log('[Autopilot] Telegram: LinkedIn sent')
+    await new Promise(r => setTimeout(r, 1500))
+
+    // 5. Facebook
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: `━━━━━━━━━━━━━━━━━━━━\n${posts.facebook}` })
+    })
+    console.log('[Autopilot] Telegram: Facebook sent')
+    await new Promise(r => setTimeout(r, 1500))
+
+    // 6. Reddit
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: `━━━━━━━━━━━━━━━━━━━━\n${posts.reddit}` })
+    })
+    console.log('[Autopilot] Telegram: Reddit sent')
+
+    console.log('[Autopilot] Telegram: All 6 messages sent SEPARATELY!')
   } catch (e: any) {
     console.log('[Autopilot] Telegram error:', e?.message || e)
   }
