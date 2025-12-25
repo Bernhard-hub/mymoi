@@ -33,11 +33,11 @@ const TWITTER_CONFIG = {
   accessTokenSecret: 'Q0HmajumQJDlQg9JwIWMnOr8tlSrlp7geguy0aN0nh28n'
 }
 
-// YouTube Config (from env)
+// YouTube Config (from env) - trim to remove any whitespace
 const YOUTUBE_CONFIG = {
-  clientId: process.env.YOUTUBE_CLIENT_ID,
-  clientSecret: process.env.YOUTUBE_CLIENT_SECRET,
-  refreshToken: process.env.YOUTUBE_REFRESH_TOKEN
+  clientId: (process.env.YOUTUBE_CLIENT_ID || '').trim(),
+  clientSecret: (process.env.YOUTUBE_CLIENT_SECRET || '').trim(),
+  refreshToken: (process.env.YOUTUBE_REFRESH_TOKEN || '').trim()
 }
 
 // ============================================
@@ -116,24 +116,31 @@ async function createVideo(): Promise<{ success: boolean; url?: string; script?:
 
 async function uploadToYouTube(videoUrl: string, title: string): Promise<{ success: boolean; youtubeUrl?: string; error?: string }> {
   console.log('[Autopilot] Step 2: Uploading to YouTube...')
+  console.log('[Autopilot] YouTube Config check - clientId:', YOUTUBE_CONFIG.clientId?.substring(0, 20) + '...')
+  console.log('[Autopilot] YouTube Config check - refreshToken:', YOUTUBE_CONFIG.refreshToken?.substring(0, 20) + '...')
 
   if (!YOUTUBE_CONFIG.clientId || !YOUTUBE_CONFIG.refreshToken) {
-    return { success: false, error: 'YouTube not configured' }
+    return { success: false, error: `YouTube not configured - clientId: ${!!YOUTUBE_CONFIG.clientId}, refreshToken: ${!!YOUTUBE_CONFIG.refreshToken}` }
   }
 
   try {
     // Refresh token
+    const tokenBody = new URLSearchParams({
+      refresh_token: YOUTUBE_CONFIG.refreshToken,
+      client_id: YOUTUBE_CONFIG.clientId,
+      client_secret: YOUTUBE_CONFIG.clientSecret || '',
+      grant_type: 'refresh_token'
+    }).toString()
+
+    console.log('[Autopilot] Refreshing YouTube token...')
     const tokenResult = await httpsRequest({
       hostname: 'oauth2.googleapis.com',
       path: '/token',
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    }, new URLSearchParams({
-      refresh_token: YOUTUBE_CONFIG.refreshToken,
-      client_id: YOUTUBE_CONFIG.clientId,
-      client_secret: YOUTUBE_CONFIG.clientSecret || '',
-      grant_type: 'refresh_token'
-    }).toString())
+    }, tokenBody)
+
+    console.log('[Autopilot] Token result:', JSON.stringify(tokenResult).substring(0, 200))
 
     if (!tokenResult.access_token) {
       return { success: false, error: `Token refresh failed: ${JSON.stringify(tokenResult)}` }
@@ -358,6 +365,16 @@ export async function POST(request: Request) {
   console.log('[Autopilot] === STARTING DAILY AUTOMATION ===')
   console.log('[Autopilot] Time:', new Date().toISOString())
 
+  // Check for test mode with existing video
+  let testVideoUrl: string | null = null
+  try {
+    const body = await request.json()
+    testVideoUrl = body.testVideoUrl || null
+    console.log('[Autopilot] Test mode:', testVideoUrl ? 'YES' : 'NO')
+  } catch {
+    // No body or invalid JSON - normal mode
+  }
+
   const results: any = {
     timestamp: new Date().toISOString(),
     video: null,
@@ -367,8 +384,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    // 1. Create Video
-    const videoResult = await createVideo()
+    // 1. Create Video (or use test video)
+    let videoResult: { success: boolean; url?: string; script?: string; avatar?: string; error?: string }
+
+    if (testVideoUrl) {
+      console.log('[Autopilot] Using test video:', testVideoUrl)
+      videoResult = { success: true, url: testVideoUrl, script: 'test', avatar: 'test' }
+    } else {
+      videoResult = await createVideo()
+    }
     results.video = videoResult
 
     if (!videoResult.success || !videoResult.url) {
