@@ -2,7 +2,7 @@
  * EVIDENRA Autopilot - Vollautomatisches Marketing
  * ================================================
  * Täglich aufrufen via Cron: POST /api/autopilot
- * Updated: 2025-12-25 23:45 - Separate platform messages v2
+ * Updated: 2025-12-26 00:15 - FORCE REDEPLOY - Separate messages v3
  *
  * Flow:
  * 1. Genesis Cloud erstellt Video (Website + Avatar)
@@ -948,6 +948,7 @@ AI-powered qualitative research made easy:
     return NextResponse.json({
       success: true,
       message: 'Daily automation completed successfully',
+      version: 'v3-separate-messages',
       results
     })
 
