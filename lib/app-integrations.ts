@@ -151,18 +151,93 @@ export async function addToTodoist(
 }
 
 // ============================================
-// 4. DISCORD - Nachrichten senden
+// 4. DISCORD - Multi-Channel Support
 // ============================================
-// Braucht: DISCORD_WEBHOOK_URL
+// EVIDENRA Discord Server - Alle Channels per Voice steuerbar!
+// KEIN BOT-Badge - Webhooks posten als echte User!
 
-export async function sendToDiscord(
+// Channel Webhooks - Aus Environment Variables oder Defaults
+const DISCORD_CHANNELS: Record<string, string> = {
+  // Hauptkanäle
+  'announcements': process.env.DISCORD_WEBHOOK_ANNOUNCEMENTS || '',
+  'welcome': process.env.DISCORD_WEBHOOK_WELCOME || '',
+  'rules': process.env.DISCORD_WEBHOOK_RULES || '',
+  'quick-start-guide': process.env.DISCORD_WEBHOOK_QUICKSTART || '',
+  'tutorials': process.env.DISCORD_WEBHOOK_TUTORIALS || '',
+
+  // Support & Community
+  'help-and-support': process.env.DISCORD_WEBHOOK_SUPPORT || '',
+  'success-stories': process.env.DISCORD_WEBHOOK_SUCCESS || '',
+  'akih-scores': process.env.DISCORD_WEBHOOK_AKIH || '',
+
+  // Founding Members (exklusiv)
+  'founding-lounge': process.env.DISCORD_WEBHOOK_FOUNDING || '',
+  'early-previews': process.env.DISCORD_WEBHOOK_PREVIEWS || '',
+
+  // Fallback für allgemeine Nachrichten
+  'default': process.env.DISCORD_WEBHOOK_URL || ''
+}
+
+// Channel Aliases für Voice Commands
+const CHANNEL_ALIASES: Record<string, string> = {
+  // Deutsch
+  'ankündigung': 'announcements',
+  'ankündigungen': 'announcements',
+  'news': 'announcements',
+  'neuigkeiten': 'announcements',
+  'willkommen': 'welcome',
+  'regeln': 'rules',
+  'hilfe': 'help-and-support',
+  'support': 'help-and-support',
+  'erfolge': 'success-stories',
+  'erfolgsgeschichten': 'success-stories',
+  'founding': 'founding-lounge',
+  'gründer': 'founding-lounge',
+  'vorschau': 'early-previews',
+  'preview': 'early-previews',
+  'tutorial': 'tutorials',
+  'anleitung': 'tutorials',
+  'quickstart': 'quick-start-guide',
+  'start': 'quick-start-guide',
+  'akih': 'akih-scores',
+
+  // Englisch direkt
+  'announce': 'announcements',
+  'help': 'help-and-support',
+  'success': 'success-stories'
+}
+
+// Default Absender - KEIN BOT Badge!
+const DISCORD_DEFAULT_USERNAME = 'Andi | EVIDENRA Support'
+const DISCORD_DEFAULT_AVATAR = 'https://evidenra.com/logo.png'
+
+/**
+ * Sendet Nachricht an einen bestimmten Discord Channel
+ * KEIN BOT-Badge weil Webhook!
+ */
+export async function sendToDiscordChannel(
+  channel: string,
   message: string,
-  username?: string
-): Promise<{ success: boolean; error?: string }> {
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL
+  options?: {
+    username?: string
+    avatarUrl?: string
+  }
+): Promise<{ success: boolean; channel: string; error?: string }> {
+  // Channel Name normalisieren
+  const normalizedChannel = channel.toLowerCase().replace(/^#/, '').trim()
+
+  // Alias auflösen
+  const resolvedChannel = CHANNEL_ALIASES[normalizedChannel] || normalizedChannel
+
+  // Webhook URL holen
+  const webhookUrl = DISCORD_CHANNELS[resolvedChannel] || DISCORD_CHANNELS['default']
 
   if (!webhookUrl) {
-    return { success: false, error: 'Discord nicht konfiguriert' }
+    return {
+      success: false,
+      channel: resolvedChannel,
+      error: `Channel #${resolvedChannel} nicht konfiguriert. Verfügbar: ${getAvailableDiscordChannels().join(', ')}`
+    }
   }
 
   try {
@@ -171,14 +246,81 @@ export async function sendToDiscord(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         content: message,
-        username: username || 'MOI'
+        username: options?.username || DISCORD_DEFAULT_USERNAME,
+        avatar_url: options?.avatarUrl || DISCORD_DEFAULT_AVATAR
       })
     })
 
-    return { success: response.ok }
+    if (!response.ok) {
+      const errorText = await response.text()
+      return { success: false, channel: resolvedChannel, error: errorText }
+    }
+
+    return { success: true, channel: resolvedChannel }
   } catch (e: any) {
-    return { success: false, error: e.message }
+    return { success: false, channel: resolvedChannel, error: e.message }
   }
+}
+
+/**
+ * Legacy Funktion - sendet an Default Channel
+ */
+export async function sendToDiscord(
+  message: string,
+  username?: string
+): Promise<{ success: boolean; error?: string }> {
+  const result = await sendToDiscordChannel('default', message, { username })
+  return { success: result.success, error: result.error }
+}
+
+/**
+ * Parst Channel aus Nachricht
+ * z.B. "#announcements 🎉 Neues Feature!" oder "announcements: Nachricht"
+ */
+export function parseDiscordMessage(text: string): { channel: string; message: string } {
+  // Pattern 1: #channel Nachricht
+  const hashMatch = text.match(/^#?([\w-]+)\s+([\s\S]+)$/)
+  if (hashMatch) {
+    const potentialChannel = hashMatch[1].toLowerCase()
+    if (DISCORD_CHANNELS[potentialChannel] || CHANNEL_ALIASES[potentialChannel]) {
+      return { channel: potentialChannel, message: hashMatch[2] }
+    }
+  }
+
+  // Pattern 2: channel: Nachricht
+  const colonMatch = text.match(/^([\w-]+):\s*([\s\S]+)$/)
+  if (colonMatch) {
+    const potentialChannel = colonMatch[1].toLowerCase()
+    if (DISCORD_CHANNELS[potentialChannel] || CHANNEL_ALIASES[potentialChannel]) {
+      return { channel: potentialChannel, message: colonMatch[2] }
+    }
+  }
+
+  // Pattern 3: "an #channel" oder "in #channel"
+  const prepositionMatch = text.match(/(?:an|in|nach|zu)\s+#?([\w-]+)\s*[:\s]\s*([\s\S]+)$/i)
+  if (prepositionMatch) {
+    const potentialChannel = prepositionMatch[1].toLowerCase()
+    if (DISCORD_CHANNELS[potentialChannel] || CHANNEL_ALIASES[potentialChannel]) {
+      return { channel: potentialChannel, message: prepositionMatch[2] }
+    }
+  }
+
+  // Default: announcements für Ankündigungen, sonst default
+  const lower = text.toLowerCase()
+  if (lower.includes('ankündigung') || lower.includes('announcement') || lower.includes('wichtig')) {
+    return { channel: 'announcements', message: text }
+  }
+
+  return { channel: 'default', message: text }
+}
+
+/**
+ * Gibt verfügbare Discord Channels zurück
+ */
+export function getAvailableDiscordChannels(): string[] {
+  return Object.entries(DISCORD_CHANNELS)
+    .filter(([_, url]) => url && url.length > 0)
+    .map(([name]) => `#${name}`)
 }
 
 // ============================================
@@ -545,10 +687,14 @@ export async function executeIntegration(
       }
 
     case 'discord':
-      const discordResult = await sendToDiscord(request.content || request.title || '')
+      // Multi-Channel Support: Parst Channel aus Nachricht
+      const parsed = parseDiscordMessage(request.content || request.title || '')
+      const discordResult = await sendToDiscordChannel(parsed.channel, parsed.message)
       return {
         success: discordResult.success,
-        message: discordResult.success ? 'Discord-Nachricht gesendet!' : discordResult.error || 'Fehler'
+        message: discordResult.success
+          ? `Discord #${discordResult.channel} gesendet!`
+          : discordResult.error || 'Fehler'
       }
 
     case 'slack':
@@ -639,7 +785,13 @@ export function getAvailableIntegrations(): string[] {
   if (process.env.NOTION_API_KEY) available.push('Notion')
   if (process.env.TRELLO_API_KEY) available.push('Trello')
   if (process.env.TODOIST_API_KEY) available.push('Todoist')
-  if (process.env.DISCORD_WEBHOOK_URL) available.push('Discord')
+
+  // Discord Multi-Channel
+  const discordChannels = getAvailableDiscordChannels()
+  if (discordChannels.length > 0) {
+    available.push(`Discord (${discordChannels.length} Channels)`)
+  }
+
   if (process.env.SLACK_WEBHOOK_URL) available.push('Slack')
   if (process.env.AIRTABLE_API_KEY) available.push('Airtable')
   if (process.env.GOOGLE_SHEETS_WEBHOOK_URL) available.push('Google Sheets')
@@ -660,7 +812,10 @@ export function isIntegrationRequest(text: string): boolean {
     'notion', 'trello', 'todoist', 'discord', 'slack', 'airtable',
     'sheets', 'tabelle', 'ifttt', 'automatisier', 'telegram', 'github', 'linear',
     'speicher in', 'füge hinzu', 'erstelle task', 'neue aufgabe',
-    'sende an', 'poste', 'issue', 'ticket', 'karte'
+    'sende an', 'poste', 'issue', 'ticket', 'karte',
+    // Discord Channel Keywords
+    '#announcements', '#support', '#founding', '#welcome', '#tutorials',
+    'ankündigung', 'announcement', 'an discord', 'nach discord', 'in discord'
   ]
 
   const lower = text.toLowerCase()

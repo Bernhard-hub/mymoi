@@ -1,42 +1,53 @@
+// Microsoft OAuth - Step 1: Redirect to Microsoft Login
 import { NextRequest, NextResponse } from 'next/server'
 
-// ============================================
-// MICROSOFT OAUTH - Start
-// ============================================
-// Leitet User zu Microsoft Login weiter
+const MICROSOFT_CLIENT_ID = process.env.MICROSOFT_CLIENT_ID
+const REDIRECT_URI = process.env.NEXT_PUBLIC_BASE_URL
+  ? `${process.env.NEXT_PUBLIC_BASE_URL}/api/auth/microsoft/callback`
+  : 'https://mymoi.app/api/auth/microsoft/callback'
+
+const SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'offline_access',
+  'Files.ReadWrite.All',
+  'Mail.ReadWrite',
+  'Calendars.ReadWrite',
+  'User.Read'
+].join(' ')
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const phone = searchParams.get('phone') // Optional: Phone number to link
-
-  const clientId = process.env.MICROSOFT_CLIENT_ID
-  const redirectUri = 'https://mymoi-bot.vercel.app/api/auth/microsoft/callback'
-
-  if (!clientId) {
-    return NextResponse.json({ error: 'Microsoft OAuth not configured' }, { status: 500 })
+  if (!MICROSOFT_CLIENT_ID) {
+    return NextResponse.json({
+      error: 'Microsoft integration not configured',
+      setup: {
+        step1: 'Go to https://portal.azure.com/',
+        step2: 'Azure Active Directory > App registrations > New registration',
+        step3: 'Set redirect URI to: ' + REDIRECT_URI,
+        step4: 'Copy Client ID and Client Secret',
+        step5: 'Add to Vercel: MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET'
+      }
+    }, { status: 503 })
   }
 
-  // Scopes für E-Mail-Zugriff
-  const scopes = [
-    'openid',
-    'profile',
-    'email',
-    'offline_access',
-    'https://graph.microsoft.com/Mail.Read',
-    'https://graph.microsoft.com/Mail.ReadWrite',
-    'https://graph.microsoft.com/Mail.Send'
-  ].join(' ')
-
-  // State enthält Phone-Nummer für spätere Zuordnung
-  const state = phone ? Buffer.from(JSON.stringify({ phone })).toString('base64') : ''
+  const state = crypto.randomUUID()
 
   const authUrl = new URL('https://login.microsoftonline.com/common/oauth2/v2.0/authorize')
-  authUrl.searchParams.set('client_id', clientId)
+  authUrl.searchParams.set('client_id', MICROSOFT_CLIENT_ID)
   authUrl.searchParams.set('response_type', 'code')
-  authUrl.searchParams.set('redirect_uri', redirectUri)
-  authUrl.searchParams.set('scope', scopes)
+  authUrl.searchParams.set('redirect_uri', REDIRECT_URI)
+  authUrl.searchParams.set('scope', SCOPES)
   authUrl.searchParams.set('state', state)
   authUrl.searchParams.set('response_mode', 'query')
 
-  return NextResponse.redirect(authUrl.toString())
+  const response = NextResponse.redirect(authUrl.toString())
+  response.cookies.set('oauth_state', state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'lax',
+    maxAge: 600
+  })
+
+  return response
 }
