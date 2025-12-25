@@ -449,16 +449,15 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
     return
   }
 
-  const socialPosts = generateSocialMediaPosts(youtubeUrl, scriptName)
-
-  // Split into multiple messages due to Telegram 4096 char limit
+  // Plain text messages (no Markdown to avoid parsing errors)
   const messages = [
-    `🎬 *EVIDENRA AUTOPILOT - NEUES VIDEO*
+    `🎬 EVIDENRA AUTOPILOT - NEUES VIDEO
 
-📺 *YouTube:* ${youtubeUrl}
-🐦 *Twitter:* ${twitterUrl}
-📹 *Video:* ${videoUrl}`,
-    `📸 *INSTAGRAM* (Copy & Paste):
+📺 YouTube: ${youtubeUrl}
+🐦 Twitter: ${twitterUrl}
+📹 Video: ${videoUrl}`,
+
+    `📸 INSTAGRAM (Copy & Paste):
 
 🔬 Struggling with qualitative data analysis?
 
@@ -472,7 +471,8 @@ EVIDENRA uses 7 AI personas to analyze your interviews from multiple perspective
 Link in bio 👆
 
 #QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation`,
-    `🎵 *TIKTOK* (Copy & Paste):
+
+    `🎵 TIKTOK (Copy & Paste):
 
 POV: You just discovered AI can do your qualitative coding 🤯
 
@@ -481,7 +481,8 @@ No more manual highlighting. No more Excel chaos. Just upload your interviews an
 Link in bio for 60% off!
 
 #QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #DataAnalysis #StudentLife`,
-    `💼 *LINKEDIN* (Copy & Paste):
+
+    `💼 LINKEDIN (Copy & Paste):
 
 🔬 The Future of Qualitative Research is Here
 
@@ -497,7 +498,8 @@ Key benefits:
 Currently offering 60% off: evidenra.com/pricing
 
 #QualitativeResearch #Research #AI #Academia #PhD #DataAnalysis`,
-    `📘 *FACEBOOK* (Copy & Paste):
+
+    `📘 FACEBOOK (Copy & Paste):
 
 🎓 Calling all researchers, PhD students, and academics!
 
@@ -512,13 +514,14 @@ EVIDENRA is an AI-powered tool that analyzes your interviews using 7 different e
 60% founding member discount: evidenra.com/pricing
 
 Watch the demo: ${youtubeUrl}`,
-    `🔴 *REDDIT* (Copy & Paste):
 
-*Title:* I built an AI tool for qualitative research analysis - 60% off for early users
+    `🔴 REDDIT (Copy & Paste):
 
-*Subreddits:* r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
+Title: I built an AI tool for qualitative research analysis - 60% off for early users
 
-*Post:*
+Subreddits: r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
+
+Post:
 Hey everyone! I've been working on EVIDENRA, an AI tool that helps with qualitative data analysis.
 
 Features:
@@ -534,16 +537,17 @@ Demo: ${youtubeUrl}`
 
   try {
     for (const msg of messages) {
-      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: TELEGRAM_CHAT_ID,
-          text: msg,
-          parse_mode: 'Markdown'
+          text: msg
         })
       })
-      await new Promise(r => setTimeout(r, 300))
+      const result = await response.json()
+      console.log('[Autopilot] Telegram msg sent:', result.ok)
+      await new Promise(r => setTimeout(r, 500))
     }
     console.log('[Autopilot] Telegram: All messages sent')
   } catch (e: any) {
