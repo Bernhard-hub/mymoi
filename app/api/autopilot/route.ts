@@ -57,11 +57,13 @@ function httpsRequest(options: https.RequestOptions, body?: string): Promise<any
         try {
           resolve(JSON.parse(data))
         } catch {
-          resolve(data)
+          resolve({ rawData: data })
         }
       })
     })
-    req.on('error', reject)
+    req.on('error', (err) => {
+      reject(new Error(`HTTPS error: ${err?.message || JSON.stringify(err)}`))
+    })
     if (body) req.write(body)
     req.end()
   })
@@ -370,7 +372,8 @@ export async function POST(request: Request) {
     results.video = videoResult
 
     if (!videoResult.success || !videoResult.url) {
-      throw new Error(videoResult.error || 'Video creation failed')
+      const errStr = typeof videoResult.error === 'string' ? videoResult.error : JSON.stringify(videoResult.error)
+      throw new Error(errStr || 'Video creation failed')
     }
 
     // Generate title based on script
@@ -431,13 +434,14 @@ ${twitterResult.success ? `✅ Twitter: ${twitterResult.tweetUrl}` : `❌ Twitte
 
   } catch (e: any) {
     console.error('[Autopilot] ERROR:', e)
+    const errorMsg = e?.message || JSON.stringify(e) || 'Unknown error'
 
     // Error notification
-    await notifyDiscord(`**❌ EVIDENRA Autopilot FEHLER**\n\n${e.message}`)
+    await notifyDiscord(`**❌ EVIDENRA Autopilot FEHLER**\n\n${errorMsg}`)
 
     return NextResponse.json({
       success: false,
-      error: e.message,
+      error: errorMsg,
       results
     }, { status: 500 })
   }
