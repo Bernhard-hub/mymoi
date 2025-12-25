@@ -18,8 +18,8 @@ import * as https from 'https'
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
 const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
-// Discord Webhook
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1449139420052852920/oZVS25FIQkarF9snGf1QB-cXZQNuZPNHGLfYhRE07pJ64zRFsnQz5NSYsvjVKfEIPQJu'
+// Discord Webhook - Private #autopilot-intern channel
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1453834434934739177/Xg_B2MzTc_yqLfPDTElTA78QirEAJA1ipyT5A10NoI1RfU-iR1D-m4zpfXmiPA8MYZ6I'
 
 // Telegram Bot - EVIDENRA Marketing
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8475164997:AAHTyTQQK6-8dGfXbip7RGAxdmsoc7yY95c'
@@ -310,22 +310,84 @@ async function postToTwitter(text: string): Promise<{ success: boolean; tweetUrl
 // 4. DISCORD NOTIFICATION (Extended with Social Media Posts)
 // ============================================
 
-function generateSocialMediaPosts(youtubeUrl: string, videoTitle: string): string {
+async function generateSocialMediaPosts(youtubeUrl: string, videoScript: string): Promise<string> {
   const shortUrl = 'evidenra.com/pricing'
 
+  // Use Claude to generate unique posts based on the video script
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-haiku-20240307',
+        max_tokens: 2000,
+        messages: [{
+          role: 'user',
+          content: `Du bist ein Social Media Marketing Experte für EVIDENRA, ein KI-Tool für qualitative Forschungsanalyse.
+
+Video-Script des heutigen Videos: "${videoScript}"
+YouTube Link: ${youtubeUrl}
+Website: ${shortUrl}
+
+Erstelle EINZIGARTIGE, FRISCHE Posts für heute. Beziehe dich auf das Video-Script!
+
+Format (exakt so):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📸 **INSTAGRAM** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Kreativer Post mit Emojis, 3-5 Sätze, dann "Link in bio", dann 10 relevante Hashtags]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎵 **TIKTOK** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[POV-Style oder trendy Format, kurz und catchy, "Link in bio for 60% off!", dann 8 Hashtags mit Tok-Varianten]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💼 **LINKEDIN** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Professioneller Post, Problem-Lösung Format, mit Bullet Points, endet mit Frage für Engagement, 5 Hashtags]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📘 **FACEBOOK** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[Freundlicher, persönlicher Ton, mit Emojis, YouTube Link einbauen]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 **REDDIT** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Title:** [Catchy aber nicht clickbait]
+**Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
+**Post:** [Authentisch, helpful, nicht zu werblich, YouTube Link am Ende]
+
+WICHTIG: Jeder Post muss ANDERS sein und zum heutigen Video-Script passen!`
+        }]
+      })
+    })
+
+    const result = await response.json()
+    if (result.content?.[0]?.text) {
+      return result.content[0].text
+    }
+  } catch (e) {
+    console.log('[Autopilot] Claude API error, using fallback:', e)
+  }
+
+  // Fallback if Claude API fails
   return `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📸 **INSTAGRAM** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬 Struggling with qualitative data analysis?
+🔬 New EVIDENRA demo just dropped!
 
-EVIDENRA uses 7 AI personas to analyze your interviews from multiple perspectives - like having a research team in your pocket.
+${videoScript}
 
-✅ Upload PDFs & transcripts
-✅ Automatic theme identification
-✅ Publication-ready exports
+✅ Try it free for 30 days
+✅ 60% founding member discount
 
-60% OFF for founding members! 🔥
 Link in bio 👆
 
 #QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation
@@ -333,70 +395,47 @@ Link in bio 👆
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎵 **TIKTOK** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-POV: You just discovered AI can do your qualitative coding 🤯
+${videoScript}
 
-No more manual highlighting. No more Excel chaos. Just upload your interviews and watch the magic happen ✨
+Link in bio for 60% off! 🔥
 
-Link in bio for 60% off!
-
-#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #DataAnalysis #StudentLife
+#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #StudentLife
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💼 **LINKEDIN** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔬 The Future of Qualitative Research is Here
+🔬 ${videoScript}
 
-After years of manual coding and endless Excel sheets, I discovered a tool that transformed my research workflow.
+EVIDENRA transforms qualitative research with AI-powered analysis.
 
-EVIDENRA uses the AKIH method with 7 AI personas to analyze qualitative data from multiple expert perspectives - methodology experts, domain specialists, and critical reviewers working together.
-
-Key benefits:
-→ 90% faster than manual coding
-→ Multi-perspective analysis for higher reliability
+→ 7 expert AI personas
+→ Multi-perspective coding
 → Publication-ready exports
 
-Currently offering 60% off for founding members: ${shortUrl}
+60% off for founding members: ${shortUrl}
 
-What's your biggest challenge with qualitative data analysis?
-
-#QualitativeResearch #Research #AI #Academia #PhD #DataAnalysis
+#QualitativeResearch #Research #AI #Academia #PhD
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📘 **FACEBOOK** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎓 Calling all researchers, PhD students, and academics!
+🎬 New demo video!
 
-Tired of spending weeks on qualitative data analysis?
+${videoScript}
 
-EVIDENRA is an AI-powered tool that analyzes your interviews and documents using 7 different expert perspectives. It's like having a whole research team helping you code your data!
+Watch here: ${youtubeUrl}
 
-✨ Upload your PDFs
-✨ Get automatic theme identification
-✨ Export publication-ready reports
-
-60% founding member discount: ${shortUrl}
-
-Watch the demo: ${youtubeUrl}
+60% off: ${shortUrl}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔴 **REDDIT** (Copy & Paste):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-**Title:** I built an AI tool for qualitative research analysis - 60% off for early users
+**Title:** ${videoScript.substring(0, 50)}...
 
 **Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
 
 **Post:**
-Hey everyone! I've been working on EVIDENRA, an AI tool that helps with qualitative data analysis.
-
-The main feature is the AKIH method - it uses 7 AI personas (methodology expert, domain specialist, devil's advocate, etc.) to analyze your data from multiple perspectives, similar to having inter-rater reliability but faster.
-
-Features:
-- Upload interview transcripts, PDFs, documents
-- Automatic coding and theme identification
-- Multi-perspective analysis
-- Export to PDF, CSV, Markdown
-
-Currently 60% off for founding members. Happy to answer any questions!
+${videoScript}
 
 Demo: ${youtubeUrl}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
