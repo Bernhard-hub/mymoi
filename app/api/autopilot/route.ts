@@ -724,40 +724,50 @@ async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: s
 
   const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
 
-  // Build video links section with all formats
-  let videoLinks = `📹 **Video-Dateien:**`
-  if (videoFormats?.youtube) videoLinks += `\n   • YouTube/LinkedIn (16:9): ${videoFormats.youtube}`
-  if (videoFormats?.tiktok) videoLinks += `\n   • TikTok/Reels (9:16): ${videoFormats.tiktok}`
-  if (videoFormats?.instagram) videoLinks += `\n   • Instagram (1:1): ${videoFormats.instagram}`
-  if (!videoFormats?.youtube && !videoFormats?.tiktok && !videoFormats?.instagram) {
-    videoLinks = `📹 **Video-Datei:** ${videoUrl}`
-  }
-
-  const message = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
+  // Erste Nachricht: Links
+  const headerMsg = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
 
 📺 **YouTube:** ${youtubeUrl}
 🐦 **Twitter:** ${twitterUrl}
-${videoLinks}
 
-${socialPosts}`
+📹 **Video-Dateien zum Download:**
+• YouTube/LinkedIn (16:9): ${videoFormats?.youtube || videoUrl}
+• TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
+• Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
+
+  // Split posts by platform separator (━━━)
+  const platformSections = socialPosts.split(/━━━+/).filter(s => s.trim().length > 50)
 
   try {
-    // Discord has 2000 char limit, so we send multiple messages
-    const chunks = message.match(/[\s\S]{1,1900}/g) || [message]
+    // Send header first
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: 'EVIDENRA Autopilot',
+        avatar_url: 'https://evidenra.com/logo.png',
+        content: headerMsg
+      })
+    })
+    await new Promise(r => setTimeout(r, 800))
 
-    for (const chunk of chunks) {
+    // Send each platform as separate message
+    for (const section of platformSections) {
+      const trimmed = section.trim()
+      if (trimmed.length < 20) continue
+
       await fetch(DISCORD_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: 'EVIDENRA Autopilot',
           avatar_url: 'https://evidenra.com/logo.png',
-          content: chunk
+          content: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
         })
       })
-      // Small delay between messages
-      await new Promise(r => setTimeout(r, 500))
+      await new Promise(r => setTimeout(r, 800))
     }
+    console.log('[Autopilot] Discord: All platform messages sent separately')
   } catch (e) {
     console.log('[Autopilot] Discord error:', e)
   }
@@ -778,45 +788,47 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
   // Generate AI-based social media posts with format-specific video URLs
   const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName, videoFormats)
 
-  // Build video links for all formats
-  let videoLinks = `📹 Video-Dateien:`
-  if (videoFormats?.youtube) videoLinks += `\n   • YouTube/LinkedIn (16:9): ${videoFormats.youtube}`
-  if (videoFormats?.tiktok) videoLinks += `\n   • TikTok/Reels (9:16): ${videoFormats.tiktok}`
-  if (videoFormats?.instagram) videoLinks += `\n   • Instagram (1:1): ${videoFormats.instagram}`
-  if (!videoFormats?.youtube && !videoFormats?.tiktok && !videoFormats?.instagram) {
-    videoLinks = `📹 Video: ${videoUrl}`
-  }
-
-  // Plain text messages (no Markdown to avoid parsing errors)
-  const messages = [
-    `🎬 EVIDENRA AUTOPILOT - NEUES VIDEO
+  // Header message with links
+  const headerMsg = `🎬 EVIDENRA AUTOPILOT - NEUES VIDEO
 
 📺 YouTube: ${youtubeUrl}
 🐦 Twitter: ${twitterUrl}
-${videoLinks}`,
-    socialPosts
-  ]
+
+📹 Video-Dateien zum Download:
+• YouTube/LinkedIn (16:9): ${videoFormats?.youtube || videoUrl}
+• TikTok/Reels (9:16): ${videoFormats?.tiktok || videoUrl}
+• Instagram (1:1): ${videoFormats?.instagram || videoUrl}`
+
+  // Split posts by platform separator (━━━)
+  const platformSections = socialPosts.split(/━━━+/).filter(s => s.trim().length > 50)
 
   try {
-    for (const msg of messages) {
-      // Telegram has 4096 char limit, split long messages
-      const chunks = msg.match(/[\s\S]{1,4000}/g) || [msg]
+    // Send header first
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: headerMsg })
+    })
+    await new Promise(r => setTimeout(r, 800))
 
-      for (const chunk of chunks) {
-        const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: chunk
-          })
+    // Send each platform as separate message
+    for (const section of platformSections) {
+      const trimmed = section.trim()
+      if (trimmed.length < 20) continue
+
+      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: `━━━━━━━━━━━━━━━━━━━━\n${trimmed}`
         })
-        const result = await response.json()
-        console.log('[Autopilot] Telegram msg sent:', result.ok)
-        await new Promise(r => setTimeout(r, 500))
-      }
+      })
+      const result = await response.json()
+      console.log('[Autopilot] Telegram platform msg sent:', result.ok)
+      await new Promise(r => setTimeout(r, 800))
     }
-    console.log('[Autopilot] Telegram: All messages sent')
+    console.log('[Autopilot] Telegram: All platform messages sent separately')
   } catch (e: any) {
     console.log('[Autopilot] Telegram error:', e?.message || e)
   }
