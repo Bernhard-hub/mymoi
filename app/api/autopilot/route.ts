@@ -464,23 +464,24 @@ async function postToTwitter(text: string, videoUrl?: string): Promise<{ success
   console.log('[Autopilot] Step 3: Posting to Twitter...')
 
   try {
+    // Note: Video upload requires Twitter Basic API tier ($100/month)
+    // Currently using text-only mode which works on Free tier
+    // To enable video: uncomment below and upgrade API tier
+    /*
     let mediaId: string | null = null
-
-    // Upload video if provided
     if (videoUrl) {
       mediaId = await uploadVideoToTwitter(videoUrl)
       if (!mediaId) {
         console.log('[Autopilot] Video upload failed, posting without video')
       }
     }
+    */
 
     const tweetUrl = 'https://api.twitter.com/2/tweets'
     const auth = generateOAuthHeader('POST', tweetUrl)
 
     const tweetBody: any = { text }
-    if (mediaId) {
-      tweetBody.media = { media_ids: [mediaId] }
-    }
+    // if (mediaId) { tweetBody.media = { media_ids: [mediaId] } }
 
     const result = await httpsRequest({
       hostname: 'api.twitter.com',
@@ -776,8 +777,8 @@ export async function POST(request: Request) {
     const youtubeResult = await uploadToYouTube(videoResult.url, title)
     results.youtube = youtubeResult
 
-    // 3. Post to Twitter (with video)
-    const tweetText = `🚀 New EVIDENRA Demo!
+    // 3. Post to Twitter (text + link, video requires paid API tier)
+    const tweetText = `🚀 New EVIDENRA Demo Video!
 
 AI-powered qualitative research made easy:
 ✅ Automatic interview analysis
@@ -786,9 +787,11 @@ AI-powered qualitative research made easy:
 
 60% OFF: evidenra.com/pricing
 
+📺 Watch: ${youtubeResult.youtubeUrl || videoResult.url}
+
 #QualitativeResearch #AI #PhD #Academia`
 
-    const twitterResult = await postToTwitter(tweetText, videoResult.url)
+    const twitterResult = await postToTwitter(tweetText)
     results.twitter = twitterResult
 
     // 4. Discord Notification (with all social media post templates)
