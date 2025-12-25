@@ -1082,18 +1082,22 @@ Try free: evidenra.com
 
     // Step 4: YouTube Upload (von Cloud-URL)
     console.log('[Werbung] Starte YouTube Upload...')
-    try {
-      result.youtube = await uploadToYouTubeFromUrl(videoUrl, options.youtubeTitle)
-      console.log('[Werbung] YouTube:', result.youtube?.success ? result.youtube.url : result.youtube?.error)
-    } catch (ytErr: any) {
-      console.log('[Werbung] YouTube Fehler:', ytErr?.message)
-      result.youtube = { success: false, error: ytErr?.message || 'YouTube Upload fehlgeschlagen' }
+    if (videoUrl) {
+      try {
+        result.youtube = await uploadToYouTubeFromUrl(videoUrl, options.youtubeTitle)
+        console.log('[Werbung] YouTube:', result.youtube?.success ? result.youtube.url : result.youtube?.error)
+      } catch (ytErr: any) {
+        console.log('[Werbung] YouTube Fehler:', ytErr?.message)
+        result.youtube = { success: false, error: ytErr?.message || 'YouTube Upload fehlgeschlagen' }
+      }
+    } else {
+      result.youtube = { success: false, error: 'Keine Video-URL verfügbar' }
     }
 
     // Step 5: Generate share links (YouTube URL bevorzugt, sonst Supabase)
     const shareVideoUrl = result.youtube?.success && result.youtube?.url
       ? result.youtube.url
-      : videoUrl
+      : (videoUrl || '')
     result.shareLinks = generateShareLinks('https://evidenra.com/pricing', 'EVIDENRA - 60% OFF', shareVideoUrl)
 
     result.success = true // Video gefunden = Erfolg
