@@ -488,6 +488,9 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
     return
   }
 
+  // Generate AI-based social media posts
+  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName)
+
   // Plain text messages (no Markdown to avoid parsing errors)
   const messages = [
     `🎬 EVIDENRA AUTOPILOT - NEUES VIDEO
@@ -495,98 +498,27 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
 📺 YouTube: ${youtubeUrl}
 🐦 Twitter: ${twitterUrl}
 📹 Video: ${videoUrl}`,
-
-    `📸 INSTAGRAM (Copy & Paste):
-
-🔬 Struggling with qualitative data analysis?
-
-EVIDENRA uses 7 AI personas to analyze your interviews from multiple perspectives - like having a research team in your pocket.
-
-✅ Upload PDFs & transcripts
-✅ Automatic theme identification
-✅ Publication-ready exports
-
-60% OFF for founding members! 🔥
-Link in bio 👆
-
-#QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation`,
-
-    `🎵 TIKTOK (Copy & Paste):
-
-POV: You just discovered AI can do your qualitative coding 🤯
-
-No more manual highlighting. No more Excel chaos. Just upload your interviews and watch the magic happen ✨
-
-Link in bio for 60% off!
-
-#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #DataAnalysis #StudentLife`,
-
-    `💼 LINKEDIN (Copy & Paste):
-
-🔬 The Future of Qualitative Research is Here
-
-After years of manual coding and endless Excel sheets, I discovered a tool that transformed my research workflow.
-
-EVIDENRA uses the AKIH method with 7 AI personas to analyze qualitative data from multiple expert perspectives.
-
-Key benefits:
-→ 90% faster than manual coding
-→ Multi-perspective analysis for higher reliability
-→ Publication-ready exports
-
-Currently offering 60% off: evidenra.com/pricing
-
-#QualitativeResearch #Research #AI #Academia #PhD #DataAnalysis`,
-
-    `📘 FACEBOOK (Copy & Paste):
-
-🎓 Calling all researchers, PhD students, and academics!
-
-Tired of spending weeks on qualitative data analysis?
-
-EVIDENRA is an AI-powered tool that analyzes your interviews using 7 different expert perspectives.
-
-✨ Upload your PDFs
-✨ Get automatic theme identification
-✨ Export publication-ready reports
-
-60% founding member discount: evidenra.com/pricing
-
-Watch the demo: ${youtubeUrl}`,
-
-    `🔴 REDDIT (Copy & Paste):
-
-Title: I built an AI tool for qualitative research analysis - 60% off for early users
-
-Subreddits: r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
-
-Post:
-Hey everyone! I've been working on EVIDENRA, an AI tool that helps with qualitative data analysis.
-
-Features:
-- Upload interview transcripts, PDFs
-- Automatic coding and theme identification
-- Multi-perspective analysis (7 AI personas)
-- Export to PDF, CSV, Markdown
-
-60% off for founding members!
-
-Demo: ${youtubeUrl}`
+    socialPosts
   ]
 
   try {
     for (const msg of messages) {
-      const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: msg
+      // Telegram has 4096 char limit, split long messages
+      const chunks = msg.match(/[\s\S]{1,4000}/g) || [msg]
+
+      for (const chunk of chunks) {
+        const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: TELEGRAM_CHAT_ID,
+            text: chunk
+          })
         })
-      })
-      const result = await response.json()
-      console.log('[Autopilot] Telegram msg sent:', result.ok)
-      await new Promise(r => setTimeout(r, 500))
+        const result = await response.json()
+        console.log('[Autopilot] Telegram msg sent:', result.ok)
+        await new Promise(r => setTimeout(r, 500))
+      }
     }
     console.log('[Autopilot] Telegram: All messages sent')
   } catch (e: any) {
