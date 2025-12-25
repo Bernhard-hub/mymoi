@@ -444,7 +444,7 @@ Demo: ${youtubeUrl}
 async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string): Promise<void> {
   console.log('[Autopilot] Step 4: Discord notification...')
 
-  const socialPosts = generateSocialMediaPosts(youtubeUrl, scriptName)
+  const socialPosts = await generateSocialMediaPosts(youtubeUrl, scriptName)
 
   const message = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
 
