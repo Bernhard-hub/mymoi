@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { after } from 'next/server'
 import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase, addToHistory, getContextForAI } from '@/lib/supabase'
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
@@ -504,7 +505,7 @@ Sprachnachricht = Voice Command!
 *Sag mir was du brauchst!* 🚀`
 
 // ============================================
-// MAIN WEBHOOK HANDLER
+// MAIN WEBHOOK HANDLER - mit Background Processing
 // ============================================
 export async function POST(request: NextRequest) {
   try {
@@ -515,14 +516,44 @@ export async function POST(request: NextRequest) {
     const successfulPayment = message?.successful_payment
 
     // ============================================
-    // PAYMENT: Pre-Checkout Query
+    // PAYMENT: Pre-Checkout Query (MUSS sofort beantwortet werden!)
     // ============================================
     if (preCheckoutQuery) {
-      // WICHTIG: Muss innerhalb 10 Sekunden beantwortet werden!
       await answerPreCheckoutQuery(preCheckoutQuery.id, true)
       return NextResponse.json({ ok: true })
     }
 
+    // ============================================
+    // BACKGROUND PROCESSING: Für lange Operationen
+    // Return sofort, verarbeite im Hintergrund
+    // ============================================
+    after(async () => {
+      try {
+        await processWebhook(body)
+      } catch (err) {
+        console.error('[MYMOI] Background processing error:', err)
+      }
+    })
+
+    // Sofort zurück zu Telegram (verhindert Timeout!)
+    return NextResponse.json({ ok: true })
+
+  } catch (error) {
+    console.error('Telegram webhook error:', error)
+    return NextResponse.json({ ok: true })
+  }
+}
+
+// ============================================
+// WEBHOOK PROCESSING (läuft im Hintergrund)
+// Diese Funktion returned NICHTS - sie läuft via after()
+// ============================================
+async function processWebhook(body: any): Promise<void> {
+  const message = body.message
+  const callbackQuery = body.callback_query
+  const successfulPayment = message?.successful_payment
+
+  try {
     // ============================================
     // PAYMENT: Erfolgreiche Zahlung
     // ============================================
@@ -558,7 +589,7 @@ export async function POST(request: NextRequest) {
 Du hast jetzt *${(user?.credits || 0) + credits} Credits*.
 
 Viel Spaß mit MOI! 🚀`)
-      return NextResponse.json({ ok: true })
+      return // Background function - einfach return statt NextResponse
     }
 
     // ============================================
@@ -859,10 +890,10 @@ Ich generiere dir ein passendes Intro:`, [
         body: JSON.stringify({ callback_query_id: callbackQuery.id })
       })
 
-      return NextResponse.json({ ok: true })
+      return
     }
 
-    if (!message) return NextResponse.json({ ok: true })
+    if (!message) return
 
     const chatId = message.chat.id
     const userId = message.from.id
@@ -880,7 +911,7 @@ Ich generiere dir ein passendes Intro:`, [
       userText = await transcribeVoice(message.voice.file_id)
       if (!userText) {
         await sendMessage(chatId, '❌ Nicht verstanden. Nochmal versuchen!')
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // 🚗 AUTO-MODUS: Bei E-Mail keine Bestätigung, direkt ausführen!
@@ -931,7 +962,7 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
             userText = message.caption
           } else {
             await addToHistory(userId, 'user', `[Video ohne Audio gesendet]`)
-            return NextResponse.json({ ok: true })
+            return
           }
         }
       } catch (error) {
@@ -945,7 +976,7 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
         if (message.caption) {
           userText = message.caption
         } else {
-          return NextResponse.json({ ok: true })
+          return
         }
       }
     } else if (message.contact) {
@@ -987,7 +1018,7 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
           reply_markup: { remove_keyboard: true }
         })
       }
-      return NextResponse.json({ ok: true })
+      return
 
     } else if (message.text) {
       // PENDING FOUNDING MEMBER INPUT
@@ -1005,7 +1036,7 @@ ${formatFoundingMemberStats(stats)}`)
         } else {
           await sendMessage(chatId, `❌ Ungültige Zahl. Bitte eine Zahl zwischen 0 und 100 eingeben.`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // PENDING OUTREACH INPUT
@@ -1038,7 +1069,7 @@ Versuche andere Begriffe wie:
             await sendMessageWithButtons(chatId, serverList, buttons)
           }
           pendingOutreachInput.delete(userId)
-          return NextResponse.json({ ok: true })
+          return
         } else if (outreachInput.type === 'intro') {
           // User hat Server-Namen für Intro eingegeben
           pendingOutreachInput.set(userId, { type: 'intro', data: { serverName: message.text.trim() } })
@@ -1054,7 +1085,7 @@ Wähle den Stil:`, [
               { text: '🎓 PhD/Doktorand', callback_data: 'outreach_intro_phd' }
             ]
           ])
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1084,7 +1115,7 @@ ${announcement}`, [
             { text: '🏆 → Founding', callback_data: 'ai_post_founding' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // PENDING DISCORD MESSAGE - Wenn User auf Button geklickt hat
@@ -1105,30 +1136,30 @@ _Gesendet als "Andi | EVIDENRA Support"_
         } else {
           await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // COMMANDS
       if (message.text === '/start') {
         await sendMessage(chatId, WELCOME_MESSAGE)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       if (message.text === '/help') {
         await sendMessage(chatId, WELCOME_MESSAGE)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       if (message.text === '/credits') {
         await sendMessage(chatId, `💰 *Deine Credits:* ${user.credits}
 
 /buy - Mehr Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       if (message.text === '/buy') {
         await sendPaymentMenu(chatId, userId)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /email Command - fragt nach E-Mail-Adresse
@@ -1140,7 +1171,7 @@ _"test@beispiel.de Betreff: Hallo"_
 
 Oder ausführlicher:
 _"Schick an max@firma.de Betreff: Meeting - Wir treffen uns morgen um 10 Uhr"_`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /termin Command
@@ -1152,7 +1183,7 @@ _"Termin morgen 14 Uhr Zahnarzt"_
 _"Meeting am Freitag 10:00 mit Team"_
 
 Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // ============================================
@@ -1221,7 +1252,7 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
         } catch (e: any) {
           await sendMessage(chatId, `❌ *Fehler:* ${e?.message || String(e)}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /video - Create new video with Genesis Engine
@@ -1242,7 +1273,7 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
         } catch (e: any) {
           await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /youtube - Upload to YouTube
@@ -1255,7 +1286,7 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
 
           if (!videoPath) {
             await sendMessage(chatId, `❌ Kein Video gefunden. Erstelle zuerst eines mit /video`)
-            return NextResponse.json({ ok: true })
+            return
           }
 
           const fileName = videoPath.split('\\').pop() || 'video.mp4'
@@ -1271,7 +1302,7 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
         } catch (e: any) {
           await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /twitter - Post to Twitter
@@ -1284,7 +1315,7 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
 
           if (!videoPath) {
             await sendMessage(chatId, `❌ Kein Video gefunden.`)
-            return NextResponse.json({ ok: true })
+            return
           }
 
           const fileName = videoPath.split('\\').pop() || 'video.mp4'
@@ -1313,7 +1344,7 @@ Interviews 10x schneller analysieren!
         } catch (e: any) {
           await sendMessage(chatId, `❌ *Fehler:* ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /share - Send share links
@@ -1336,7 +1367,7 @@ ${links.reddit}
 ${links.instagram}
 
 _Eingeloggt = KEIN Captcha!_`, { disable_web_page_preview: true })
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /marketing-status - Check marketing setup status
@@ -1359,7 +1390,7 @@ _Eingeloggt = KEIN Captcha!_`, { disable_web_page_preview: true })
 /share - Share-Links
 /voiceover - ElevenLabs Voiceover
 /avatar - HeyGen Avatar Video`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // ============================================
@@ -1385,7 +1416,7 @@ Erstelle professionelle deutsche Voiceovers!
             { text: '🎯 Call-to-Action', callback_data: 'voice_cta' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /voiceover mit Text
@@ -1394,7 +1425,7 @@ Erstelle professionelle deutsche Voiceovers!
 
         if (!text) {
           await sendMessage(chatId, `Bitte gib einen Text an:\n\`/voiceover Dein Text hier\``)
-          return NextResponse.json({ ok: true })
+          return
         }
 
         await sendChatAction(chatId, 'record_voice')
@@ -1427,7 +1458,7 @@ Erstelle professionelle deutsche Voiceovers!
         } catch (e: any) {
           await sendMessage(chatId, `❌ Fehler: ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /avatar - HeyGen Avatar Video
@@ -1449,7 +1480,7 @@ Erstelle Videos mit sprechenden AI-Avataren!
             { text: '📊 Status pruefen', callback_data: 'avatar_status' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /avatar mit Script - OHNE WARTEN um Telegram-Retries zu vermeiden
@@ -1458,7 +1489,7 @@ Erstelle Videos mit sprechenden AI-Avataren!
 
         if (!script) {
           await sendMessage(chatId, `Bitte gib ein Script an:\n\`/avatar Dein Script hier\``)
-          return NextResponse.json({ ok: true })
+          return
         }
 
         await sendChatAction(chatId, 'typing')
@@ -1474,7 +1505,7 @@ Erstelle Videos mit sprechenden AI-Avataren!
 
           if (!createResult.success || !createResult.video_id) {
             await sendMessage(chatId, `❌ Video-Erstellung fehlgeschlagen: ${createResult.error}`)
-            return NextResponse.json({ ok: true })
+            return
           }
 
           // SOFORT antworten mit Video ID
@@ -1489,7 +1520,7 @@ Erstelle Videos mit sprechenden AI-Avataren!
         } catch (e: any) {
           await sendMessage(chatId, `❌ Fehler: ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /videostatus - HeyGen Video Status prüfen
@@ -1498,7 +1529,7 @@ Erstelle Videos mit sprechenden AI-Avataren!
 
         if (!videoId) {
           await sendMessage(chatId, `Bitte gib eine Video ID an:\n\`/videostatus abc123\``)
-          return NextResponse.json({ ok: true })
+          return
         }
 
         try {
@@ -1538,7 +1569,7 @@ node composite-video.js "${status.video_url}" "D:\\Genesis Engine\\video-generat
         } catch (e: any) {
           await sendMessage(chatId, `❌ Fehler: ${e.message}`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /voices - Verfuegbare Stimmen anzeigen
@@ -1560,7 +1591,7 @@ node composite-video.js "${status.video_url}" "D:\\Genesis Engine\\video-generat
 \`/avatar [script]\` - Video mit Avatar`
 
         await sendMessage(chatId, voices)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /anruf Command - Twilio ruft User an!
@@ -1588,7 +1619,7 @@ node composite-video.js "${status.video_url}" "D:\\Genesis Engine\\video-generat
           console.error('Twilio call error:', e)
           await sendMessage(chatId, `❌ Anruf fehlgeschlagen.\n\nRuf mich an: *+1 (888) 664-2970*`)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /pdf Command
@@ -1599,7 +1630,7 @@ Schreib mir was du brauchst:
 _"Angebot für Webdesign als PDF"_
 _"Rechnung über 500€ als PDF"_
 _"Businessplan für Café als PDF"_`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /wetter Command
@@ -1609,7 +1640,7 @@ _"Businessplan für Café als PDF"_`)
 Schreib mir eine Stadt:
 _"Wetter Wien"_
 _"Wetter in Berlin"_`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // ============================================
@@ -1633,7 +1664,7 @@ Claude generiert eine professionelle Ankündigung!`, [
             { text: '📢 Allgemein', callback_data: 'ai_general' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /ai mit Text - Direkt generieren
@@ -1659,7 +1690,7 @@ ${announcement}`, [
               { text: '🏆 → Founding', callback_data: 'ai_post_founding' }
             ]
           ])
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1678,7 +1709,7 @@ ${announcement}`, [
             { text: '📢 Announcement posten', callback_data: 'founding_announce' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /stats - Discord Statistiken
@@ -1714,7 +1745,7 @@ ${announcement}`, [
         }
 
         await sendMessage(chatId, statsMessage)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // ============================================
@@ -1737,7 +1768,7 @@ Finde Discord-Server von Universitäten, Forschungs-Communities und Studenten-Gr
             { text: '📅 Wochenreport', callback_data: 'outreach_report' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /find mit Suchbegriff - DISCORD DISCOVERY API + FERTIGES INTRO!
@@ -1790,7 +1821,7 @@ Currently in beta - happy to answer questions!
 2. Leite diese Nachricht weiter oder kopiere sie
 3. Poste im #introductions Channel`)
           }
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1810,7 +1841,7 @@ ${formatOutreachList(recentEntries)}`, [
             { text: '📅 Wochenreport', callback_data: 'outreach_report' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /intro - Auto-Intro Generator
@@ -1821,7 +1852,7 @@ Für welchen Server soll ich eine Vorstellung schreiben?
 
 _Schreib den Server-Namen:_`)
         pendingOutreachInput.set(userId, { type: 'intro' })
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /intro mit Server-Name
@@ -1841,7 +1872,7 @@ Wähle den Stil:`, [
               { text: '🎓 PhD/Doktorand', callback_data: 'outreach_intro_phd' }
             ]
           ])
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1851,7 +1882,7 @@ Wähle den Stil:`, [
         const { generateWeeklyReport } = await import('@/lib/discord-outreach')
         const report = await generateWeeklyReport()
         await sendMessage(chatId, report)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /join - Zeigt wie man einem Server beitritt
@@ -1863,7 +1894,7 @@ Schreib: \`/join Servername\`
 _Beispiel: /join Uni Wien Students_
 
 Ich zeige dir dann Links um den Invite zu finden!`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /join <server> - Zeige Invite-Links
@@ -1872,7 +1903,7 @@ Ich zeige dir dann Links um den Invite zu finden!`)
         if (serverName) {
           const { formatInviteHelp } = await import('@/lib/discord-outreach')
           await sendMessage(chatId, formatInviteHelp(serverName), { disable_web_page_preview: true })
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1885,7 +1916,7 @@ Schreib: \`/joined Servername\`
 _Beispiel: /joined Uni Wien Students_
 
 Der Server wird dann in deiner Outreach-Liste aktualisiert!`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // /joined <server> - Markiere als beigetreten
@@ -1909,7 +1940,7 @@ Der Server wird dann in deiner Outreach-Liste aktualisiert!`)
           } else {
             await sendMessage(chatId, `❌ Fehler beim Aktualisieren.`)
           }
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -1935,7 +1966,7 @@ Postet als: *Andi | EVIDENRA Support*
             { text: '👋 Welcome', callback_data: 'discord_welcome' }
           ]
         ])
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // Discord Channel Commands - Direkt posten
@@ -1959,7 +1990,7 @@ Postet als: *Andi | EVIDENRA Support*
 Schreib deine Nachricht (mit Emojis!):`)
             // Speichere pending channel für nächste Nachricht
             await savePendingDiscordChannel(userId, channel)
-            return NextResponse.json({ ok: true })
+            return
           }
 
           // Nachricht direkt senden
@@ -1976,7 +2007,7 @@ _Gesendet als "Andi | EVIDENRA Support"_
           } else {
             await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
           }
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -2002,7 +2033,7 @@ _Gesendet als "Andi | EVIDENRA Support"_
           } else {
             await sendMessage(chatId, `❌ *Fehler:* ${result.error}`)
           }
-          return NextResponse.json({ ok: true })
+          return
         }
       }
 
@@ -2021,12 +2052,12 @@ _Gesendet als "Andi | EVIDENRA Support"_
           historyText += `_MOI erinnert sich automatisch an deine letzten Gespräche für bessere Antworten!_`
           await sendMessage(chatId, historyText)
         }
-        return NextResponse.json({ ok: true })
+        return
       }
 
       userText = message.text
     } else {
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // Intent erkennen
@@ -2047,7 +2078,7 @@ _Gesendet als "Andi | EVIDENRA Support"_
       } else {
         await sendMessage(chatId, `Keine Videos gefunden. Hier ist der YouTube Link:\nhttps://www.youtube.com/results?search_query=${encodeURIComponent(intent.query)}`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2064,7 +2095,7 @@ Bitte gib ein Script an (min. 10 Zeichen):
 • "Avatar: Willkommen bei EVIDENRA!"
 
 Oder nutze: /avatar Dein Text hier`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       try {
@@ -2078,7 +2109,7 @@ Oder nutze: /avatar Dein Text hier`)
 
         if (!result.success || !result.video_id) {
           await sendMessage(chatId, `❌ Video-Erstellung fehlgeschlagen: ${result.error}`)
-          return NextResponse.json({ ok: true })
+          return
         }
 
         // SOFORT antworten - NICHT auf Video warten!
@@ -2099,7 +2130,7 @@ _Oder warte - ich schicke dir den Link wenn es fertig ist!_`)
       } catch (e: any) {
         await sendMessage(chatId, `❌ Fehler: ${e.message}`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2231,7 +2262,7 @@ _"${script.substring(0, 80)}..."_`)
 
         if (!avatarResult.success || !avatarResult.video_id) {
           await sendMessage(chatId, `❌ HeyGen Fehler: ${avatarResult.error}`)
-          return NextResponse.json({ ok: true })
+          return
         }
 
         // SOFORT antworten - NICHT auf Video warten (Vercel Timeout!)
@@ -2260,7 +2291,7 @@ node composite-video.js [VIDEO_URL] "D:\\Genesis Engine\\video-generator\\output
       } catch (e: any) {
         await sendMessage(chatId, `❌ Fehler: ${e.message}`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2276,7 +2307,7 @@ Bitte gib einen Text an:
 • "Sprich: Das ist ein Test"
 
 Oder nutze: /voiceover Dein Text hier`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       await sendChatAction(chatId, 'record_voice')
@@ -2306,7 +2337,7 @@ Oder nutze: /voiceover Dein Text hier`)
       } catch (e: any) {
         await sendMessage(chatId, `❌ Fehler: ${e.message}`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2332,7 +2363,7 @@ _Daten von Open-Meteo_`)
       } else {
         await sendMessage(chatId, `Konnte das Wetter für "${intent.query}" nicht abrufen.`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2349,7 +2380,7 @@ _Daten von Open-Meteo_`)
       } else {
         await sendMessage(chatId, `Keine News gefunden zu "${intent.query}".`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2360,7 +2391,7 @@ _Daten von Open-Meteo_`)
       await sendMessage(chatId, `🗺️ *Karte für "${intent.query}":*
 
 [📍 Auf Google Maps öffnen](${mapUrl})`)
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2377,7 +2408,7 @@ _Daten von Open-Meteo_`)
       } else {
         await sendMessage(chatId, `[🔍 Google Suche](https://www.google.com/search?q=${encodeURIComponent(intent.query)})`)
       }
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2437,7 +2468,7 @@ _Beispiele:_
 • _"Interesse an seinem BMW auf Willhaben"_
 • _"Anfrage für Immobilien-Exposé"_
 • _"B2B Kooperationsanfrage für sein Unternehmen"_`, { disable_web_page_preview: true })
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2452,7 +2483,7 @@ Schick mir eine Telefonnummer und ich:
 3. Suche die Nummer auf Plattformen (eBay, Willhaben, etc.)
 
 _Beispiel: "+43 664 1234567 - interessiert an Auto auf Willhaben"_`)
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2466,7 +2497,7 @@ SMS-Feature kommt bald!
 Für jetzt: Schick mir eine Telefonnummer und ich erstelle dir eine perfekte SMS-Vorlage die du kopieren kannst.
 
 _Twilio Integration in Entwicklung..._`)
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2476,7 +2507,7 @@ _Twilio Integration in Entwicklung..._`)
       const hasCredits = await useCredit(userId)
       if (!hasCredits) {
         await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       await sendMessage(chatId, '📄 *Erstelle PDF...*')
@@ -2502,7 +2533,7 @@ _Twilio Integration in Entwicklung..._`)
         await sendMessage(chatId, `📄 *${asset.title}*\n\n${asset.content}`)
       }
 
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2513,7 +2544,7 @@ _Twilio Integration in Entwicklung..._`)
       const hasCredits = await useCredit(userId)
       if (!hasCredits) {
         await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // E-Mail-Adresse extrahieren
@@ -2523,7 +2554,7 @@ _Twilio Integration in Entwicklung..._`)
 
       if (!toEmail) {
         await sendMessage(chatId, `❌ Keine gültige E-Mail-Adresse gefunden.\n\n_Beispiel: "max@firma.de Treffen morgen um 10"_`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // Check ob nur Entwurf gewünscht
@@ -2583,7 +2614,7 @@ ${body}
 
 _Sag "senden" um abzuschicken, oder ändere den Text._`)
         await addToHistory(userId, 'assistant', `E-Mail Entwurf für ${toEmail}`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       // SOFORT SENDEN! 🚀
@@ -2608,7 +2639,7 @@ _${body.substring(0, 100)}${body.length > 100 ? '...' : ''}_`)
 _Prüfe die Adresse: ${toEmail}_`)
       }
 
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2618,7 +2649,7 @@ _Prüfe die Adresse: ${toEmail}_`)
       const hasCredits = await useCredit(userId)
       if (!hasCredits) {
         await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       await sendMessage(chatId, '📅 *Erstelle Kalender-Event...*')
@@ -2706,7 +2737,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
         await sendMessage(chatId, `📅 *Kalender*\n\n${asset.content}`)
       }
 
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2714,7 +2745,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
     // ============================================
     if (intent.type === 'buy') {
       await sendPaymentMenu(chatId, userId)
-      return NextResponse.json({ ok: true })
+      return
     }
 
     // ============================================
@@ -2724,7 +2755,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
       const hasCredits = await useCredit(userId)
       if (!hasCredits) {
         await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       await sendMessage(chatId, '🔗 *Verbinde mit App...*')
@@ -2741,7 +2772,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
           } else {
             await sendMessage(chatId, `🔗 *Keine Integrationen konfiguriert*\n\nKontaktiere den Admin um Apps zu verbinden!`)
           }
-          return NextResponse.json({ ok: true })
+          return
         }
 
         const result = await executeIntegration(request)
@@ -2757,7 +2788,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
           await sendMessage(chatId, `❌ *Fehler:* ${result.message}`)
         }
 
-        return NextResponse.json({ ok: true })
+        return
       } catch (e) {
         console.error('Integration error:', e)
         // Fallback zu normaler Verarbeitung
@@ -2771,7 +2802,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
       const hasCredits = await useCredit(userId)
       if (!hasCredits) {
         await sendMessage(chatId, `⚠️ *Credits aufgebraucht!*\n\n/buy - Credits kaufen`)
-        return NextResponse.json({ ok: true })
+        return
       }
 
       await sendMessage(chatId, '⚡ *Analysiere Aktionen...*')
@@ -2823,7 +2854,7 @@ ${events[0]?.location ? `📍 ${events[0].location}` : ''}`)
         await sendMessage(chatId, `${emoji} *${result.summary}*\n\n_${successCount}/${result.results.length} Aktionen erfolgreich_`)
 
         await addToHistory(userId, 'assistant', result.summary)
-        return NextResponse.json({ ok: true })
+        return
 
       } catch (e) {
         console.error('Chain execution error:', e)
@@ -2845,7 +2876,7 @@ Deine kostenlosen Assets sind weg.
 💳 /buy - Credits kaufen
 
 💎 10 Credits für nur 1,99€!`)
-      return NextResponse.json({ ok: true })
+      return
     }
 
     await sendMessage(chatId, '⚡ *Erstelle dein Asset...*')
@@ -2970,10 +3001,10 @@ Deine kostenlosen Assets sind weg.
       await sendMessage(chatId, `💡 _Noch ${remainingCredits} Credits übrig_\n/buy - Mehr kaufen`)
     }
 
-    return NextResponse.json({ ok: true })
+    return
 
   } catch (error) {
     console.error('Telegram webhook error:', error)
-    return NextResponse.json({ ok: true })
+    return
   }
 }
