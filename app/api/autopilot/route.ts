@@ -335,6 +335,8 @@ async function notifyDiscord(message: string): Promise<void> {
 
 async function notifyTelegram(message: string): Promise<void> {
   console.log('[Autopilot] Step 5: Telegram notification...')
+  console.log('[Autopilot] Telegram Token:', TELEGRAM_BOT_TOKEN?.substring(0, 10) + '...')
+  console.log('[Autopilot] Telegram Chat:', TELEGRAM_CHAT_ID)
 
   if (!TELEGRAM_BOT_TOKEN) {
     console.log('[Autopilot] Telegram not configured')
@@ -342,18 +344,20 @@ async function notifyTelegram(message: string): Promise<void> {
   }
 
   try {
-    await httpsRequest({
-      hostname: 'api.telegram.org',
-      path: `/bot${TELEGRAM_BOT_TOKEN}/sendMessage`,
+    // Use fetch instead of httpsRequest for reliability
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }, JSON.stringify({
-      chat_id: TELEGRAM_CHAT_ID,
-      text: message,
-      parse_mode: 'Markdown'
-    }))
-  } catch (e) {
-    console.log('[Autopilot] Telegram error:', e)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: message,
+        parse_mode: 'Markdown'
+      })
+    })
+    const result = await response.json()
+    console.log('[Autopilot] Telegram result:', JSON.stringify(result).substring(0, 200))
+  } catch (e: any) {
+    console.log('[Autopilot] Telegram error:', e?.message || e)
   }
 }
 
