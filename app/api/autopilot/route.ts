@@ -18,8 +18,8 @@ import * as https from 'https'
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
 const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
-// Discord Webhook - Private #autopilot-intern channel
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1453834434934739177/Xg_B2MzTc_yqLfPDTElTA78QirEAJA1ipyT5A10NoI1RfU-iR1D-m4zpfXmiPA8MYZ6I'
+// Discord Webhook - Private #autopilot-intern channel (only visible to owner)
+const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1453837269529006222/Erp30x784b1dnPxo0g6ML1yAJsrjR1GmjD0YFJwp95IB6jHgZlLNnUhRvL0569G7Ivnc'
 
 // Telegram Bot - EVIDENRA Marketing
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8475164997:AAHTyTQQK6-8dGfXbip7RGAxdmsoc7yY95c'
