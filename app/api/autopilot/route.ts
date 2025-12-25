@@ -16,7 +16,7 @@ import * as https from 'https'
 
 // Genesis Cloud API
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-const GENESIS_API_KEY = process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret'
+const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
 // Discord Webhook
 const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1449139420052852920/oZVS25FIQkarF9snGf1QB-cXZQNuZPNHGLfYhRE07pJ64zRFsnQz5NSYsvjVKfEIPQJu'
