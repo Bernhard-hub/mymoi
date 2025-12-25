@@ -307,23 +307,131 @@ async function postToTwitter(text: string): Promise<{ success: boolean; tweetUrl
 }
 
 // ============================================
-// 4. DISCORD NOTIFICATION
+// 4. DISCORD NOTIFICATION (Extended with Social Media Posts)
 // ============================================
 
-async function notifyDiscord(message: string): Promise<void> {
+function generateSocialMediaPosts(youtubeUrl: string, videoTitle: string): string {
+  const shortUrl = 'evidenra.com/pricing'
+
+  return `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📸 **INSTAGRAM** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬 Struggling with qualitative data analysis?
+
+EVIDENRA uses 7 AI personas to analyze your interviews from multiple perspectives - like having a research team in your pocket.
+
+✅ Upload PDFs & transcripts
+✅ Automatic theme identification
+✅ Publication-ready exports
+
+60% OFF for founding members! 🔥
+Link in bio 👆
+
+#QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎵 **TIKTOK** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POV: You just discovered AI can do your qualitative coding 🤯
+
+No more manual highlighting. No more Excel chaos. Just upload your interviews and watch the magic happen ✨
+
+Link in bio for 60% off!
+
+#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #DataAnalysis #StudentLife
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💼 **LINKEDIN** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔬 The Future of Qualitative Research is Here
+
+After years of manual coding and endless Excel sheets, I discovered a tool that transformed my research workflow.
+
+EVIDENRA uses the AKIH method with 7 AI personas to analyze qualitative data from multiple expert perspectives - methodology experts, domain specialists, and critical reviewers working together.
+
+Key benefits:
+→ 90% faster than manual coding
+→ Multi-perspective analysis for higher reliability
+→ Publication-ready exports
+
+Currently offering 60% off for founding members: ${shortUrl}
+
+What's your biggest challenge with qualitative data analysis?
+
+#QualitativeResearch #Research #AI #Academia #PhD #DataAnalysis
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📘 **FACEBOOK** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎓 Calling all researchers, PhD students, and academics!
+
+Tired of spending weeks on qualitative data analysis?
+
+EVIDENRA is an AI-powered tool that analyzes your interviews and documents using 7 different expert perspectives. It's like having a whole research team helping you code your data!
+
+✨ Upload your PDFs
+✨ Get automatic theme identification
+✨ Export publication-ready reports
+
+60% founding member discount: ${shortUrl}
+
+Watch the demo: ${youtubeUrl}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔴 **REDDIT** (Copy & Paste):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+**Title:** I built an AI tool for qualitative research analysis - 60% off for early users
+
+**Subreddits:** r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
+
+**Post:**
+Hey everyone! I've been working on EVIDENRA, an AI tool that helps with qualitative data analysis.
+
+The main feature is the AKIH method - it uses 7 AI personas (methodology expert, domain specialist, devil's advocate, etc.) to analyze your data from multiple perspectives, similar to having inter-rater reliability but faster.
+
+Features:
+- Upload interview transcripts, PDFs, documents
+- Automatic coding and theme identification
+- Multi-perspective analysis
+- Export to PDF, CSV, Markdown
+
+Currently 60% off for founding members. Happy to answer any questions!
+
+Demo: ${youtubeUrl}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+}
+
+async function notifyDiscord(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string): Promise<void> {
   console.log('[Autopilot] Step 4: Discord notification...')
 
+  const socialPosts = generateSocialMediaPosts(youtubeUrl, scriptName)
+
+  const message = `**🎬 EVIDENRA AUTOPILOT - NEUES VIDEO**
+
+📺 **YouTube:** ${youtubeUrl}
+🐦 **Twitter:** ${twitterUrl}
+📹 **Video-Datei:** ${videoUrl}
+
+${socialPosts}`
+
   try {
-    await httpsRequest({
-      hostname: 'discord.com',
-      path: new URL(DISCORD_WEBHOOK).pathname,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
-    }, JSON.stringify({
-      username: 'EVIDENRA Autopilot',
-      avatar_url: 'https://evidenra.com/logo.png',
-      content: message
-    }))
+    // Discord has 2000 char limit, so we send multiple messages
+    const chunks = message.match(/[\s\S]{1,1900}/g) || [message]
+
+    for (const chunk of chunks) {
+      await fetch(DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'EVIDENRA Autopilot',
+          avatar_url: 'https://evidenra.com/logo.png',
+          content: chunk
+        })
+      })
+      // Small delay between messages
+      await new Promise(r => setTimeout(r, 500))
+    }
   } catch (e) {
     console.log('[Autopilot] Discord error:', e)
   }
@@ -333,29 +441,111 @@ async function notifyDiscord(message: string): Promise<void> {
 // 5. TELEGRAM NOTIFICATION
 // ============================================
 
-async function notifyTelegram(message: string): Promise<void> {
+async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: string, scriptName: string): Promise<void> {
   console.log('[Autopilot] Step 5: Telegram notification...')
-  console.log('[Autopilot] Telegram Token:', TELEGRAM_BOT_TOKEN?.substring(0, 10) + '...')
-  console.log('[Autopilot] Telegram Chat:', TELEGRAM_CHAT_ID)
 
   if (!TELEGRAM_BOT_TOKEN) {
     console.log('[Autopilot] Telegram not configured')
     return
   }
 
+  const socialPosts = generateSocialMediaPosts(youtubeUrl, scriptName)
+
+  // Split into multiple messages due to Telegram 4096 char limit
+  const messages = [
+    `🎬 *EVIDENRA AUTOPILOT - NEUES VIDEO*
+
+📺 *YouTube:* ${youtubeUrl}
+🐦 *Twitter:* ${twitterUrl}
+📹 *Video:* ${videoUrl}`,
+    `📸 *INSTAGRAM* (Copy & Paste):
+
+🔬 Struggling with qualitative data analysis?
+
+EVIDENRA uses 7 AI personas to analyze your interviews from multiple perspectives - like having a research team in your pocket.
+
+✅ Upload PDFs & transcripts
+✅ Automatic theme identification
+✅ Publication-ready exports
+
+60% OFF for founding members! 🔥
+Link in bio 👆
+
+#QualitativeResearch #PhD #AcademicTwitter #ResearchLife #ThesisWriting #DataAnalysis #AI #GradSchool #Academia #Dissertation`,
+    `🎵 *TIKTOK* (Copy & Paste):
+
+POV: You just discovered AI can do your qualitative coding 🤯
+
+No more manual highlighting. No more Excel chaos. Just upload your interviews and watch the magic happen ✨
+
+Link in bio for 60% off!
+
+#QualitativeResearch #PhDLife #ThesisTok #AcademiaTok #ResearchTok #GradSchool #AI #DataAnalysis #StudentLife`,
+    `💼 *LINKEDIN* (Copy & Paste):
+
+🔬 The Future of Qualitative Research is Here
+
+After years of manual coding and endless Excel sheets, I discovered a tool that transformed my research workflow.
+
+EVIDENRA uses the AKIH method with 7 AI personas to analyze qualitative data from multiple expert perspectives.
+
+Key benefits:
+→ 90% faster than manual coding
+→ Multi-perspective analysis for higher reliability
+→ Publication-ready exports
+
+Currently offering 60% off: evidenra.com/pricing
+
+#QualitativeResearch #Research #AI #Academia #PhD #DataAnalysis`,
+    `📘 *FACEBOOK* (Copy & Paste):
+
+🎓 Calling all researchers, PhD students, and academics!
+
+Tired of spending weeks on qualitative data analysis?
+
+EVIDENRA is an AI-powered tool that analyzes your interviews using 7 different expert perspectives.
+
+✨ Upload your PDFs
+✨ Get automatic theme identification
+✨ Export publication-ready reports
+
+60% founding member discount: evidenra.com/pricing
+
+Watch the demo: ${youtubeUrl}`,
+    `🔴 *REDDIT* (Copy & Paste):
+
+*Title:* I built an AI tool for qualitative research analysis - 60% off for early users
+
+*Subreddits:* r/QualitativeResearch, r/AskAcademia, r/GradSchool, r/PhD
+
+*Post:*
+Hey everyone! I've been working on EVIDENRA, an AI tool that helps with qualitative data analysis.
+
+Features:
+- Upload interview transcripts, PDFs
+- Automatic coding and theme identification
+- Multi-perspective analysis (7 AI personas)
+- Export to PDF, CSV, Markdown
+
+60% off for founding members!
+
+Demo: ${youtubeUrl}`
+  ]
+
   try {
-    // Use fetch instead of httpsRequest for reliability
-    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
-        text: message,
-        parse_mode: 'Markdown'
+    for (const msg of messages) {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: msg,
+          parse_mode: 'Markdown'
+        })
       })
-    })
-    const result = await response.json()
-    console.log('[Autopilot] Telegram result:', JSON.stringify(result).substring(0, 200))
+      await new Promise(r => setTimeout(r, 300))
+    }
+    console.log('[Autopilot] Telegram: All messages sent')
   } catch (e: any) {
     console.log('[Autopilot] Telegram error:', e?.message || e)
   }
@@ -430,26 +620,22 @@ ${youtubeResult.youtubeUrl || videoResult.url}
     const twitterResult = await postToTwitter(tweetText)
     results.twitter = twitterResult
 
-    // 4. Discord Notification
-    const discordMessage = `**🎬 EVIDENRA Autopilot - Tägliches Update**
-
-✅ **Video erstellt:** ${videoResult.script} (${videoResult.avatar})
-${youtubeResult.success ? `✅ **YouTube:** ${youtubeResult.youtubeUrl}` : `❌ YouTube: ${youtubeResult.error}`}
-${twitterResult.success ? `✅ **Twitter:** ${twitterResult.tweetUrl}` : `❌ Twitter: ${twitterResult.error}`}
-
-📹 **Supabase:** ${videoResult.url}`
-
-    await notifyDiscord(discordMessage)
+    // 4. Discord Notification (with all social media post templates)
+    await notifyDiscord(
+      youtubeResult.youtubeUrl || '',
+      twitterResult.tweetUrl || '',
+      videoResult.url || '',
+      videoResult.script || 'EVIDENRA Demo'
+    )
     results.notifications.discord = true
 
-    // 5. Telegram Notification
-    const telegramMessage = `🤖 *EVIDENRA Autopilot*
-
-✅ Video: ${videoResult.script}
-${youtubeResult.success ? `✅ YouTube: ${youtubeResult.youtubeUrl}` : `❌ YouTube fehlgeschlagen`}
-${twitterResult.success ? `✅ Twitter: ${twitterResult.tweetUrl}` : `❌ Twitter fehlgeschlagen`}`
-
-    await notifyTelegram(telegramMessage)
+    // 5. Telegram Notification (with all social media post templates)
+    await notifyTelegram(
+      youtubeResult.youtubeUrl || '',
+      twitterResult.tweetUrl || '',
+      videoResult.url || '',
+      videoResult.script || 'EVIDENRA Demo'
+    )
     results.notifications.telegram = true
 
     console.log('[Autopilot] === AUTOMATION COMPLETE ===')
@@ -464,8 +650,19 @@ ${twitterResult.success ? `✅ Twitter: ${twitterResult.tweetUrl}` : `❌ Twitte
     console.error('[Autopilot] ERROR:', e)
     const errorMsg = e?.message || JSON.stringify(e) || 'Unknown error'
 
-    // Error notification
-    await notifyDiscord(`**❌ EVIDENRA Autopilot FEHLER**\n\n${errorMsg}`)
+    // Error notification via simple fetch
+    try {
+      await fetch(DISCORD_WEBHOOK, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: 'EVIDENRA Autopilot',
+          content: `**❌ EVIDENRA Autopilot FEHLER**\n\n${errorMsg}`
+        })
+      })
+    } catch (discordErr) {
+      console.log('[Autopilot] Discord error notification failed:', discordErr)
+    }
 
     return NextResponse.json({
       success: false,
