@@ -447,6 +447,10 @@ async function uploadVideoToTwitter(videoUrl: string): Promise<string | null> {
       }
     }
 
+    // Extra wait after processing to ensure video is fully ready
+    console.log('[Autopilot] Waiting 10s for Twitter video to be ready...')
+    await new Promise(r => setTimeout(r, 10000))
+
     console.log('[Autopilot] Twitter video upload complete:', mediaId)
     return mediaId
 
