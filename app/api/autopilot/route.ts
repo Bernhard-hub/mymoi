@@ -46,6 +46,10 @@ const YOUTUBE_CONFIG = {
 
 function httpsRequest(options: https.RequestOptions, body?: string): Promise<any> {
   return new Promise((resolve, reject) => {
+    // Add Content-Length if body is provided
+    if (body && options.headers) {
+      (options.headers as Record<string, any>)['Content-Length'] = Buffer.byteLength(body)
+    }
     const req = https.request(options, (res) => {
       let data = ''
       res.on('data', chunk => data += chunk)
@@ -129,7 +133,7 @@ async function uploadToYouTube(videoUrl: string, title: string): Promise<{ succe
     }).toString())
 
     if (!tokenResult.access_token) {
-      return { success: false, error: 'Token refresh failed' }
+      return { success: false, error: `Token refresh failed: ${JSON.stringify(tokenResult)}` }
     }
 
     // Download video
