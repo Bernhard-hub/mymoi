@@ -100,10 +100,11 @@ async function createVideo(): Promise<{ success: boolean; url?: string; script?:
         avatar: result.avatar
       }
     } else {
-      return { success: false, error: result.error || 'Genesis Cloud error' }
+      const errMsg = typeof result.error === 'string' ? result.error : JSON.stringify(result.error || result)
+      return { success: false, error: errMsg || 'Genesis Cloud error' }
     }
   } catch (e: any) {
-    return { success: false, error: e.message }
+    return { success: false, error: e?.message || JSON.stringify(e) || 'Unknown error' }
   }
 }
 
