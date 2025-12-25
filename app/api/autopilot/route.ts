@@ -277,13 +277,207 @@ function generateOAuthHeader(method: string, url: string): string {
   ).join(', ')}`
 }
 
-async function postToTwitter(text: string): Promise<{ success: boolean; tweetUrl?: string; error?: string }> {
-  console.log('[Autopilot] Step 3: Posting to Twitter...')
+// Generate OAuth signature for media upload (includes body params)
+function generateOAuthSignatureWithParams(method: string, url: string, oauthParams: Record<string, string>, bodyParams: Record<string, string>): string {
+  const allParams = { ...oauthParams, ...bodyParams }
+  const sortedParams = Object.keys(allParams).sort().map(key =>
+    `${encodeURIComponent(key)}=${encodeURIComponent(allParams[key])}`
+  ).join('&')
 
-  const tweetUrl = 'https://api.twitter.com/2/tweets'
-  const auth = generateOAuthHeader('POST', tweetUrl)
+  const signatureBaseString = [
+    method.toUpperCase(),
+    encodeURIComponent(url),
+    encodeURIComponent(sortedParams)
+  ].join('&')
+
+  const signingKey = `${encodeURIComponent(TWITTER_CONFIG.apiSecretKey)}&${encodeURIComponent(TWITTER_CONFIG.accessTokenSecret)}`
+  return crypto.createHmac('sha1', signingKey).update(signatureBaseString).digest('base64')
+}
+
+function generateOAuthHeaderWithParams(method: string, url: string, bodyParams: Record<string, string> = {}): string {
+  const oauthParams: Record<string, string> = {
+    oauth_consumer_key: TWITTER_CONFIG.apiKey,
+    oauth_nonce: crypto.randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: TWITTER_CONFIG.accessToken,
+    oauth_version: '1.0'
+  }
+
+  const signature = generateOAuthSignatureWithParams(method, url, oauthParams, bodyParams)
+  oauthParams.oauth_signature = signature
+
+  return `OAuth ${Object.keys(oauthParams).sort().map(key =>
+    `${encodeURIComponent(key)}="${encodeURIComponent(oauthParams[key])}"`
+  ).join(', ')}`
+}
+
+// Upload video to Twitter using chunked media upload
+async function uploadVideoToTwitter(videoUrl: string): Promise<string | null> {
+  console.log('[Autopilot] Uploading video to Twitter...')
 
   try {
+    // Download video
+    const videoBuffer = await new Promise<Buffer>((resolve, reject) => {
+      https.get(videoUrl, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', chunk => chunks.push(chunk))
+        res.on('end', () => resolve(Buffer.concat(chunks)))
+        res.on('error', reject)
+      }).on('error', reject)
+    })
+
+    console.log('[Autopilot] Video downloaded:', videoBuffer.length, 'bytes')
+
+    const mediaUploadUrl = 'https://upload.twitter.com/1.1/media/upload.json'
+
+    // INIT
+    const initParams = {
+      command: 'INIT',
+      total_bytes: videoBuffer.length.toString(),
+      media_type: 'video/mp4',
+      media_category: 'tweet_video'
+    }
+
+    const initAuth = generateOAuthHeaderWithParams('POST', mediaUploadUrl, initParams)
+    const initBody = new URLSearchParams(initParams).toString()
+
+    const initResult = await httpsRequest({
+      hostname: 'upload.twitter.com',
+      path: '/1.1/media/upload.json',
+      method: 'POST',
+      headers: {
+        'Authorization': initAuth,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    }, initBody)
+
+    if (!initResult.media_id_string) {
+      console.log('[Autopilot] Twitter INIT failed:', JSON.stringify(initResult))
+      return null
+    }
+
+    const mediaId = initResult.media_id_string
+    console.log('[Autopilot] Twitter media_id:', mediaId)
+
+    // APPEND - upload in chunks (max 5MB each)
+    const chunkSize = 5 * 1024 * 1024
+    const totalChunks = Math.ceil(videoBuffer.length / chunkSize)
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize
+      const end = Math.min(start + chunkSize, videoBuffer.length)
+      const chunk = videoBuffer.slice(start, end)
+      const chunkBase64 = chunk.toString('base64')
+
+      const appendParams = {
+        command: 'APPEND',
+        media_id: mediaId,
+        segment_index: i.toString(),
+        media_data: chunkBase64
+      }
+
+      const appendAuth = generateOAuthHeaderWithParams('POST', mediaUploadUrl, {
+        command: 'APPEND',
+        media_id: mediaId,
+        segment_index: i.toString()
+      })
+      const appendBody = new URLSearchParams(appendParams).toString()
+
+      await httpsRequest({
+        hostname: 'upload.twitter.com',
+        path: '/1.1/media/upload.json',
+        method: 'POST',
+        headers: {
+          'Authorization': appendAuth,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }, appendBody)
+
+      console.log('[Autopilot] Twitter APPEND chunk', i + 1, '/', totalChunks)
+    }
+
+    // FINALIZE
+    const finalizeParams = {
+      command: 'FINALIZE',
+      media_id: mediaId
+    }
+
+    const finalizeAuth = generateOAuthHeaderWithParams('POST', mediaUploadUrl, finalizeParams)
+    const finalizeBody = new URLSearchParams(finalizeParams).toString()
+
+    const finalizeResult = await httpsRequest({
+      hostname: 'upload.twitter.com',
+      path: '/1.1/media/upload.json',
+      method: 'POST',
+      headers: {
+        'Authorization': finalizeAuth,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      }
+    }, finalizeBody)
+
+    console.log('[Autopilot] Twitter FINALIZE:', JSON.stringify(finalizeResult).substring(0, 200))
+
+    // Check processing status if needed
+    if (finalizeResult.processing_info) {
+      let checkAfter = finalizeResult.processing_info.check_after_secs || 5
+      let state = finalizeResult.processing_info.state
+
+      while (state === 'pending' || state === 'in_progress') {
+        console.log('[Autopilot] Twitter video processing, waiting', checkAfter, 's...')
+        await new Promise(r => setTimeout(r, checkAfter * 1000))
+
+        const statusParams = { command: 'STATUS', media_id: mediaId }
+        const statusAuth = generateOAuthHeaderWithParams('GET', mediaUploadUrl, statusParams)
+
+        const statusResult = await httpsRequest({
+          hostname: 'upload.twitter.com',
+          path: `/1.1/media/upload.json?command=STATUS&media_id=${mediaId}`,
+          method: 'GET',
+          headers: { 'Authorization': statusAuth }
+        })
+
+        state = statusResult.processing_info?.state
+        checkAfter = statusResult.processing_info?.check_after_secs || 5
+
+        if (state === 'failed') {
+          console.log('[Autopilot] Twitter video processing failed:', statusResult.processing_info?.error)
+          return null
+        }
+      }
+    }
+
+    console.log('[Autopilot] Twitter video upload complete:', mediaId)
+    return mediaId
+
+  } catch (e: any) {
+    console.log('[Autopilot] Twitter video upload error:', e.message)
+    return null
+  }
+}
+
+async function postToTwitter(text: string, videoUrl?: string): Promise<{ success: boolean; tweetUrl?: string; error?: string }> {
+  console.log('[Autopilot] Step 3: Posting to Twitter...')
+
+  try {
+    let mediaId: string | null = null
+
+    // Upload video if provided
+    if (videoUrl) {
+      mediaId = await uploadVideoToTwitter(videoUrl)
+      if (!mediaId) {
+        console.log('[Autopilot] Video upload failed, posting without video')
+      }
+    }
+
+    const tweetUrl = 'https://api.twitter.com/2/tweets'
+    const auth = generateOAuthHeader('POST', tweetUrl)
+
+    const tweetBody: any = { text }
+    if (mediaId) {
+      tweetBody.media = { media_ids: [mediaId] }
+    }
+
     const result = await httpsRequest({
       hostname: 'api.twitter.com',
       path: '/2/tweets',
@@ -292,7 +486,7 @@ async function postToTwitter(text: string): Promise<{ success: boolean; tweetUrl
         'Authorization': auth,
         'Content-Type': 'application/json'
       }
-    }, JSON.stringify({ text }))
+    }, JSON.stringify(tweetBody))
 
     if (result.data?.id) {
       const url = `https://twitter.com/evidenra/status/${result.data.id}`
@@ -578,21 +772,19 @@ export async function POST(request: Request) {
     const youtubeResult = await uploadToYouTube(videoResult.url, title)
     results.youtube = youtubeResult
 
-    // 3. Post to Twitter
-    const tweetText = `🚀 New EVIDENRA Demo Video!
+    // 3. Post to Twitter (with video)
+    const tweetText = `🚀 New EVIDENRA Demo!
 
 AI-powered qualitative research made easy:
 ✅ Automatic interview analysis
 ✅ 7-Persona AKIH method
 ✅ Publication-ready exports
 
-60% OFF Founding Members: evidenra.com/pricing
-
-${youtubeResult.youtubeUrl || videoResult.url}
+60% OFF: evidenra.com/pricing
 
 #QualitativeResearch #AI #PhD #Academia`
 
-    const twitterResult = await postToTwitter(tweetText)
+    const twitterResult = await postToTwitter(tweetText, videoResult.url)
     results.twitter = twitterResult
 
     // 4. Discord Notification (with all social media post templates)
