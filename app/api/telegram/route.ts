@@ -523,14 +523,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // BACKGROUND PROCESSING: Fire-and-forget Pattern
-    // Return sofort, Vercel führt processWebhook weiter aus
+    // SYNCHRONE VERARBEITUNG - Vercel wartet auf Completion
     // ============================================
-    processWebhook(body).catch(err => {
-      console.error('[MYMOI] Background processing error:', err)
-    })
-
-    // Sofort zurück zu Telegram (verhindert Timeout!)
+    await processWebhook(body)
     return NextResponse.json({ ok: true })
 
   } catch (error) {
