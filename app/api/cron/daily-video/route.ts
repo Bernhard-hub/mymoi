@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8475164997:AAHTyTQQK6-8dGfXbip7RGAxdmsoc7yY95c'
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7804985180'
 
 // 50 EVIDENRA Marketing Videos

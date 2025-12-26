@@ -20,18 +20,18 @@ const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
 const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
 // Discord Webhook - Private #autopilot-intern channel (only visible to owner)
-const DISCORD_WEBHOOK = 'https://discord.com/api/webhooks/1453837269529006222/Erp30x784b1dnPxo0g6ML1yAJsrjR1GmjD0YFJwp95IB6jHgZlLNnUhRvL0569G7Ivnc'
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK
 
 // Telegram Bot - EVIDENRA Marketing
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8475164997:AAHTyTQQK6-8dGfXbip7RGAxdmsoc7yY95c'
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7804985180'
 
 // Twitter Config - Updated with Read+Write permissions
 const TWITTER_CONFIG = {
-  apiKey: '5tkc2DtB1FNjjWHQ6oDK3kUgN',
-  apiSecretKey: 'i23uBMrdDVHEZyrrhdNlFoqMzqU4p5F0SjfQpszB6iaVZDUS0Z',
-  accessToken: '2003734522517663745-aOrEHqGgyvoi3hagsoYHxhhO1856MK',
-  accessTokenSecret: 'bm0I8xn28fewdmssnvQJAd5QWtFNkezYKlogxx7u7sNlQ'
+  apiKey: process.env.TWITTER_API_KEY,
+  apiSecretKey: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET
 }
 
 // YouTube Config (from env) - trim to remove any whitespace
