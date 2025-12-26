@@ -507,22 +507,27 @@ Sprachnachricht = Voice Command!
 // MAIN WEBHOOK HANDLER
 // ============================================
 export async function POST(request: NextRequest) {
+  console.log('[WEBHOOK] Received request')
+
   try {
     const body = await request.json()
+    console.log('[WEBHOOK] Body parsed:', JSON.stringify(body).substring(0, 200))
+
     const message = body.message
     const callbackQuery = body.callback_query
     const preCheckoutQuery = body.pre_checkout_query
 
     // QUICK COMMANDS - vor allem anderen, ohne Supabase
     if (message?.text === '/help' || message?.text === '/start') {
-      await sendMessage(message.chat.id, WELCOME_MESSAGE)
+      console.log('[WEBHOOK] /help or /start detected, sending welcome')
+      const result = await sendMessage(message.chat.id, WELCOME_MESSAGE)
+      console.log('[WEBHOOK] sendMessage result:', JSON.stringify(result))
       return NextResponse.json({ ok: true })
     }
 
     if (message?.text === '/discord') {
-      await sendMessageWithButtons(message.chat.id, `🎮 *Discord Multi-Channel*
-
-Wähle einen Channel:`, [
+      console.log('[WEBHOOK] /discord detected')
+      const result = await sendMessageWithButtons(message.chat.id, '🎮 *Discord Multi-Channel*\n\nWähle einen Channel:', [
         [
           { text: '📢 Announcements', callback_data: 'discord_announcements' },
           { text: '💬 Support', callback_data: 'discord_support' }
@@ -532,6 +537,7 @@ Wähle einen Channel:`, [
           { text: '⭐ Success', callback_data: 'discord_success' }
         ]
       ])
+      console.log('[WEBHOOK] sendMessageWithButtons result:', JSON.stringify(result))
       return NextResponse.json({ ok: true })
     }
 
@@ -542,12 +548,13 @@ Wähle einen Channel:`, [
     }
 
     // Alles andere verarbeiten
+    console.log('[WEBHOOK] Processing full webhook')
     await processWebhook(body)
     return NextResponse.json({ ok: true })
 
   } catch (error) {
-    console.error('Telegram webhook error:', error)
-    return NextResponse.json({ ok: true })
+    console.error('[WEBHOOK] ERROR:', error)
+    return NextResponse.json({ ok: true, error: String(error) })
   }
 }
 
