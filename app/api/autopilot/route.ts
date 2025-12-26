@@ -20,7 +20,7 @@ const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
 const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
 // Discord Webhook - Private #autopilot-intern channel (only visible to owner)
-const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL || ''
 
 // Telegram Bot - EVIDENRA Marketing
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
@@ -28,10 +28,10 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7804985180'
 
 // Twitter Config - Updated with Read+Write permissions
 const TWITTER_CONFIG = {
-  apiKey: process.env.TWITTER_API_KEY,
-  apiSecretKey: process.env.TWITTER_API_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET
+  apiKey: process.env.TWITTER_API_KEY || '',
+  apiSecretKey: process.env.TWITTER_API_SECRET || '',
+  accessToken: process.env.TWITTER_ACCESS_TOKEN || '',
+  accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
 }
 
 // YouTube Config (from env) - trim to remove any whitespace
