@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { waitUntil } from '@vercel/functions'
 import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase, addToHistory, getContextForAI } from '@/lib/supabase'
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
@@ -524,17 +523,14 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // BACKGROUND PROCESSING: Using Vercel waitUntil()
-    // This ensures processWebhook completes even after response is sent
+    // DIREKTE VERARBEITUNG (await statt background)
     // ============================================
-    const processingPromise = processWebhook(body).catch(err => {
-      console.error('[MYMOI] Background processing error:', err)
-    })
+    try {
+      await processWebhook(body)
+    } catch (err) {
+      console.error('[MYMOI] Processing error:', err)
+    }
 
-    // waitUntil() keeps the function alive until processing completes
-    waitUntil(processingPromise)
-
-    // Sofort zurück zu Telegram (verhindert Timeout!)
     return NextResponse.json({ ok: true })
 
   } catch (error) {
