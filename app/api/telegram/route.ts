@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { after } from 'next/server'
 import { getOrCreateUser, useCredit, uploadFile, saveAsset, supabase, addToHistory, getContextForAI } from '@/lib/supabase'
 import { generateAsset, AssetType } from '@/lib/ai-engine'
 import { createPresentation } from '@/lib/pptx'
@@ -524,15 +523,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================
-    // BACKGROUND PROCESSING: Für lange Operationen
-    // Return sofort, verarbeite im Hintergrund
+    // BACKGROUND PROCESSING: Fire-and-forget Pattern
+    // Return sofort, Vercel führt processWebhook weiter aus
     // ============================================
-    after(async () => {
-      try {
-        await processWebhook(body)
-      } catch (err) {
-        console.error('[MYMOI] Background processing error:', err)
-      }
+    processWebhook(body).catch(err => {
+      console.error('[MYMOI] Background processing error:', err)
     })
 
     // Sofort zurück zu Telegram (verhindert Timeout!)

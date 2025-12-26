@@ -65,9 +65,6 @@ const VIDEOS = [
   { id: 50, title: "Jetzt starten", script: "Bereit für bessere qualitative Forschung? Starte jetzt auf evidenra.com!" }
 ]
 
-// Supabase für Status-Tracking
-import { supabase } from '@/lib/supabase'
-
 async function sendTelegramMessage(text: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: 'POST',
