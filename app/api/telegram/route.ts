@@ -504,7 +504,7 @@ Sprachnachricht = Voice Command!
 *Sag mir was du brauchst!* 🚀`
 
 // ============================================
-// MAIN WEBHOOK HANDLER - mit Background Processing
+// MAIN WEBHOOK HANDLER
 // ============================================
 export async function POST(request: NextRequest) {
   try {
@@ -512,19 +512,36 @@ export async function POST(request: NextRequest) {
     const message = body.message
     const callbackQuery = body.callback_query
     const preCheckoutQuery = body.pre_checkout_query
-    const successfulPayment = message?.successful_payment
 
-    // ============================================
-    // PAYMENT: Pre-Checkout Query (MUSS sofort beantwortet werden!)
-    // ============================================
+    // QUICK COMMANDS - vor allem anderen, ohne Supabase
+    if (message?.text === '/help' || message?.text === '/start') {
+      await sendMessage(message.chat.id, WELCOME_MESSAGE)
+      return NextResponse.json({ ok: true })
+    }
+
+    if (message?.text === '/discord') {
+      await sendMessageWithButtons(message.chat.id, `🎮 *Discord Multi-Channel*
+
+Wähle einen Channel:`, [
+        [
+          { text: '📢 Announcements', callback_data: 'discord_announcements' },
+          { text: '💬 Support', callback_data: 'discord_support' }
+        ],
+        [
+          { text: '🏆 Founding', callback_data: 'discord_founding' },
+          { text: '⭐ Success', callback_data: 'discord_success' }
+        ]
+      ])
+      return NextResponse.json({ ok: true })
+    }
+
+    // PAYMENT: Pre-Checkout Query
     if (preCheckoutQuery) {
       await answerPreCheckoutQuery(preCheckoutQuery.id, true)
       return NextResponse.json({ ok: true })
     }
 
-    // ============================================
-    // SYNCHRONE VERARBEITUNG - Vercel wartet auf Completion
-    // ============================================
+    // Alles andere verarbeiten
     await processWebhook(body)
     return NextResponse.json({ ok: true })
 
