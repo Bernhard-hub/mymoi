@@ -5,7 +5,7 @@
       "schedule": "0 9 * * *"
     },
     {
-      "path": "/api/cron/daily-video",
+      "path": "/api/autopilot",
       "schedule": "0 8 * * *"
     }
   ]
