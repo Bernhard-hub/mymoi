@@ -823,8 +823,34 @@ async function notifyTelegram(youtubeUrl: string, twitterUrl: string, videoUrl: 
 // ============================================
 
 export async function POST(request: Request) {
-  console.log('[Autopilot] === STARTING DAILY AUTOMATION ===')
+  console.log('[Autopilot] === TRIGGERING RAILWAY AUTOPILOT ===')
   console.log('[Autopilot] Time:', new Date().toISOString())
+
+  // Trigger Railway Genesis Cloud (keine Timeout-Limits)
+  try {
+    const railwayResponse = await fetch('https://web-production-ab08c.up.railway.app/daily-autopilot', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GENESIS_API_KEY}`
+      },
+      body: JSON.stringify({})
+    })
+
+    const result = await railwayResponse.json()
+    console.log('[Autopilot] Railway triggered:', result)
+
+    return NextResponse.json({
+      success: true,
+      message: 'Railway autopilot triggered',
+      railway: result
+    })
+  } catch (e: any) {
+    console.error('[Autopilot] Railway trigger failed:', e.message)
+    // Fallback: Vercel autopilot (kann timeout bekommen)
+  }
+
+  console.log('[Autopilot] === FALLBACK TO VERCEL AUTOPILOT ===')
 
   // Check for test mode with existing video
   let testVideoUrl: string | null = null
