@@ -20,7 +20,7 @@ const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
 const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
 
 // Discord Webhook - Private #autopilot-intern channel (only visible to owner)
-const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL
 
 // Telegram Bot - EVIDENRA Marketing
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
