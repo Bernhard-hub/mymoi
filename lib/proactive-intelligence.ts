@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from './supabase'
 
 const anthropic = new Anthropic({
-  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim()
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').replace(/\\n/g, '').trim()
 })
 
 // ============================================

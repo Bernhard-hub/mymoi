@@ -4,7 +4,7 @@
 // Verwendet Together.ai FLUX (schnell & günstig)
 // ~2-3 Sekunden pro Bild, $0.003/Bild
 
-const TOGETHER_API_KEY = (process.env.TOGETHER_API_KEY || '').trim()
+const TOGETHER_API_KEY = (process.env.TOGETHER_API_KEY || '').replace(/\\n/g, '').trim()
 
 export interface ImageGenResult {
   success: boolean

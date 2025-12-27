@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
-  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim()
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').replace(/\\n/g, '').trim()
 })
 
 // ============================================
@@ -235,8 +235,8 @@ async function fetchDiscordStats(guildId: string, botToken: string): Promise<Dis
 }
 
 export async function getDiscordStats(): Promise<DiscordStats | null> {
-  const guildId = (process.env.DISCORD_GUILD_ID || '1449111009846366325').trim()
-  const botToken = (process.env.DISCORD_BOT_TOKEN || '').trim()
+  const guildId = (process.env.DISCORD_GUILD_ID || '1449111009846366325').replace(/\\n/g, '').trim()
+  const botToken = (process.env.DISCORD_BOT_TOKEN || '').replace(/\\n/g, '').trim()
 
   if (!botToken) {
     // Fallback: Nur Founding Member Stats

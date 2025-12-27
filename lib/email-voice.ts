@@ -10,7 +10,7 @@ import { supabase } from './supabase'
 import { sendEmail } from './email'
 
 const anthropic = new Anthropic({
-  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim()
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').replace(/\\n/g, '').trim()
 })
 
 // ============================================

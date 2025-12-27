@@ -55,10 +55,10 @@ function loadYouTubeCredentials(): YouTubeCredentials | null {
   // Zuerst Environment Variables pruefen (fuer Vercel)
   if (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_REFRESH_TOKEN) {
     return {
-      clientId: process.env.YOUTUBE_CLIENT_ID.trim(),
-      clientSecret: process.env.YOUTUBE_CLIENT_SECRET?.trim() || '',
-      accessToken: process.env.YOUTUBE_ACCESS_TOKEN?.trim() || '',
-      refreshToken: process.env.YOUTUBE_REFRESH_TOKEN.trim(),
+      clientId: process.env.YOUTUBE_CLIENT_ID.replace(/\\n/g, '').trim(),
+      clientSecret: process.env.YOUTUBE_CLIENT_SECRET?.replace(/\\n/g, '').trim() || '',
+      accessToken: process.env.YOUTUBE_ACCESS_TOKEN?.replace(/\\n/g, '').trim() || '',
+      refreshToken: process.env.YOUTUBE_REFRESH_TOKEN.replace(/\\n/g, '').trim(),
       expiresAt: 0 // Force refresh
     }
   }
@@ -630,8 +630,8 @@ export function findLatestVideo(): string | undefined {
 // ============================================================================
 
 export async function getLatestCloudVideo(): Promise<{ url: string; filename: string } | null> {
-  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').trim()
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.trim()
+  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').replace(/\\n/g, '').trim()
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.replace(/\\n/g, '').trim()
 
   if (!supabaseKey) {
     return null
@@ -671,8 +671,8 @@ export async function getLatestCloudVideo(): Promise<{ url: string; filename: st
 }
 
 export async function listCloudVideos(): Promise<Array<{ url: string; filename: string; created_at: string }>> {
-  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').trim()
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.trim()
+  const supabaseUrl = (process.env.SUPABASE_URL || 'https://qkcukdgrqncahpvrrxtm.supabase.co').replace(/\\n/g, '').trim()
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY?.replace(/\\n/g, '').trim()
 
   if (!supabaseKey) {
     return []
@@ -809,7 +809,7 @@ export async function createVideoViaGenesisCloud(topic: string = 'founding', ful
 }
 
 export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS = 'founding'): Promise<HeyGenVideoResult> {
-  const apiKey = process.env.HEYGEN_API_KEY?.trim()
+  const apiKey = process.env.HEYGEN_API_KEY?.replace(/\\n/g, '').trim()
   if (!apiKey) {
     return { success: false, error: 'HeyGen API Key nicht konfiguriert' }
   }
@@ -872,7 +872,7 @@ export async function createHeyGenCloudVideo(topic: keyof typeof VIDEO_SCRIPTS =
 }
 
 export async function checkHeyGenVideoStatus(videoId: string): Promise<{ status: string; videoUrl?: string }> {
-  const apiKey = process.env.HEYGEN_API_KEY?.trim()
+  const apiKey = process.env.HEYGEN_API_KEY?.replace(/\\n/g, '').trim()
 
   return new Promise((resolve) => {
     const req = https.request({

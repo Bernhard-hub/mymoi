@@ -7,7 +7,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from './supabase'
 
 const anthropic = new Anthropic({
-  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim()
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').replace(/\\n/g, '').trim()
 })
 
 // ============================================
@@ -78,7 +78,7 @@ const KNOWN_SERVERS: DiscordServer[] = [
 // DISCORD OFFICIAL DISCOVERY API - DIE LÖSUNG!
 // ============================================
 
-const DISCORD_BOT_TOKEN = (process.env.DISCORD_BOT_TOKEN || '').trim()
+const DISCORD_BOT_TOKEN = (process.env.DISCORD_BOT_TOKEN || '').replace(/\\n/g, '').trim()
 
 export interface DiscoveryServer {
   id: string

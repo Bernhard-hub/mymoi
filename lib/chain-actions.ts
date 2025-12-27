@@ -6,7 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 
 const anthropic = new Anthropic({
-  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').replace(/\\n/g, '').trim(),
 })
 
 // Alle möglichen Aktionen die MOI ausführen kann

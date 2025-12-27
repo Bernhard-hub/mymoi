@@ -7,7 +7,7 @@
  */
 
 // API Key wird aus Environment geladen
-const ELEVENLABS_API_KEY = (process.env.ELEVENLABS_API_KEY || '').trim()
+const ELEVENLABS_API_KEY = (process.env.ELEVENLABS_API_KEY || '').replace(/\\n/g, '').trim()
 
 const API_BASE = 'https://api.elevenlabs.io/v1'
 
