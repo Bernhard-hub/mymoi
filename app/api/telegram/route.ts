@@ -10,7 +10,7 @@ import { parseChainActions, executeChain, mightBeChain, ChainResult } from '@/li
 import { actionHandlers } from '@/lib/action-handlers'
 import { isIntegrationRequest, parseIntegrationRequest, executeIntegration, getAvailableIntegrations } from '@/lib/app-integrations'
 
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN!
+const TELEGRAM_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`
 
 // ============================================

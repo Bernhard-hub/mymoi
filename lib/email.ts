@@ -4,7 +4,7 @@
 // Verwendet Brevo (300 E-Mails/Tag kostenlos)
 // Kann an JEDE E-Mail-Adresse senden!
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY || ''
+const BREVO_API_KEY = (process.env.BREVO_API_KEY || '').trim()
 const SENDER_EMAIL = 'noreply@mymoi.app' // Verifizierte Domain
 const SENDER_NAME = 'MOI'
 
