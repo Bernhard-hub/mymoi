@@ -157,26 +157,27 @@ export async function addToTodoist(
 // KEIN BOT-Badge - Webhooks posten als echte User!
 
 // Channel Webhooks - Aus Environment Variables oder Defaults
-// ALL TRIMMED to remove invisible characters that break HTTP requests
+// Fix: Remove literal \n strings that Vercel adds to env vars
+const cleanEnv = (v: string) => v.replace(/\\n/g, '').trim()
 const DISCORD_CHANNELS: Record<string, string> = {
   // Hauptkanäle
-  'announcements': (process.env.DISCORD_WEBHOOK_ANNOUNCEMENTS || '').trim(),
-  'welcome': (process.env.DISCORD_WEBHOOK_WELCOME || '').trim(),
-  'rules': (process.env.DISCORD_WEBHOOK_RULES || '').trim(),
-  'quick-start-guide': (process.env.DISCORD_WEBHOOK_QUICKSTART || '').trim(),
-  'tutorials': (process.env.DISCORD_WEBHOOK_TUTORIALS || '').trim(),
+  'announcements': cleanEnv(process.env.DISCORD_WEBHOOK_ANNOUNCEMENTS || ''),
+  'welcome': cleanEnv(process.env.DISCORD_WEBHOOK_WELCOME || ''),
+  'rules': cleanEnv(process.env.DISCORD_WEBHOOK_RULES || ''),
+  'quick-start-guide': cleanEnv(process.env.DISCORD_WEBHOOK_QUICKSTART || ''),
+  'tutorials': cleanEnv(process.env.DISCORD_WEBHOOK_TUTORIALS || ''),
 
   // Support & Community
-  'help-and-support': (process.env.DISCORD_WEBHOOK_SUPPORT || '').trim(),
-  'success-stories': (process.env.DISCORD_WEBHOOK_SUCCESS || '').trim(),
-  'akih-scores': (process.env.DISCORD_WEBHOOK_AKIH || '').trim(),
+  'help-and-support': cleanEnv(process.env.DISCORD_WEBHOOK_SUPPORT || ''),
+  'success-stories': cleanEnv(process.env.DISCORD_WEBHOOK_SUCCESS || ''),
+  'akih-scores': cleanEnv(process.env.DISCORD_WEBHOOK_AKIH || ''),
 
   // Founding Members (exklusiv)
-  'founding-lounge': (process.env.DISCORD_WEBHOOK_FOUNDING || '').trim(),
-  'early-previews': (process.env.DISCORD_WEBHOOK_PREVIEWS || '').trim(),
+  'founding-lounge': cleanEnv(process.env.DISCORD_WEBHOOK_FOUNDING || ''),
+  'early-previews': cleanEnv(process.env.DISCORD_WEBHOOK_PREVIEWS || ''),
 
   // Fallback für allgemeine Nachrichten
-  'default': (process.env.DISCORD_WEBHOOK_URL || '').trim()
+  'default': cleanEnv(process.env.DISCORD_WEBHOOK_URL || '')
 }
 
 // Channel Aliases für Voice Commands

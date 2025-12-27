@@ -753,8 +753,9 @@ export interface HeyGenVideoResult {
 
 // Genesis Cloud API - Railway-hosted video generation service
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-// Aggressive sanitization: trim + remove ALL non-printable ASCII characters
-const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'evidenra-genesis-2024').trim().replace(/[^\x20-\x7E]/g, '')
+// Fix: Remove literal \n strings AND whitespace from env vars
+const sanitizeEnv = (val: string) => val.replace(/\\n/g, '').trim()
+const GENESIS_API_KEY = sanitizeEnv(process.env.GENESIS_API_KEY || 'evidenra-genesis-2024')
 
 export async function createVideoViaGenesisCloud(topic: string = 'founding', fullMode: boolean = true): Promise<HeyGenVideoResult> {
   // fullMode = true: Screen Recording + Avatar + FFmpeg Composite
