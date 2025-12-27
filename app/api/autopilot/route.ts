@@ -17,14 +17,15 @@ import * as https from 'https'
 
 // Genesis Cloud API
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'evidenra-genesis-2024').trim()
+// Aggressive sanitization: trim + remove ALL non-printable ASCII characters
+const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'evidenra-genesis-2024').trim().replace(/[^\x20-\x7E]/g, '')
 
 // Discord Webhook - Private #autopilot-intern channel (only visible to owner)
-const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK_URL || '').trim()
+const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK_URL || '').trim().replace(/[^\x20-\x7E]/g, '')
 
 // Telegram Bot - EVIDENRA Marketing
-const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
-const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '7804985180').trim()
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim().replace(/[^\x20-\x7E]/g, '')
+const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '7804985180').trim().replace(/[^\x20-\x7E]/g, '')
 
 // Twitter Config - Updated with Read+Write permissions - ALL TRIMMED
 const TWITTER_CONFIG = {
