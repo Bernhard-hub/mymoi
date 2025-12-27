@@ -9,7 +9,7 @@ import { sendSMS } from './twilio-deliver'
 import { sendEmail } from './email'
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim(),
 })
 
 // ============================================

@@ -9,7 +9,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabase } from './supabase'
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!
+  apiKey: (process.env.ANTHROPIC_API_KEY || '').trim()
 })
 
 // ============================================
@@ -157,25 +157,26 @@ export async function addToTodoist(
 // KEIN BOT-Badge - Webhooks posten als echte User!
 
 // Channel Webhooks - Aus Environment Variables oder Defaults
+// ALL TRIMMED to remove invisible characters that break HTTP requests
 const DISCORD_CHANNELS: Record<string, string> = {
   // Hauptkanäle
-  'announcements': process.env.DISCORD_WEBHOOK_ANNOUNCEMENTS || '',
-  'welcome': process.env.DISCORD_WEBHOOK_WELCOME || '',
-  'rules': process.env.DISCORD_WEBHOOK_RULES || '',
-  'quick-start-guide': process.env.DISCORD_WEBHOOK_QUICKSTART || '',
-  'tutorials': process.env.DISCORD_WEBHOOK_TUTORIALS || '',
+  'announcements': (process.env.DISCORD_WEBHOOK_ANNOUNCEMENTS || '').trim(),
+  'welcome': (process.env.DISCORD_WEBHOOK_WELCOME || '').trim(),
+  'rules': (process.env.DISCORD_WEBHOOK_RULES || '').trim(),
+  'quick-start-guide': (process.env.DISCORD_WEBHOOK_QUICKSTART || '').trim(),
+  'tutorials': (process.env.DISCORD_WEBHOOK_TUTORIALS || '').trim(),
 
   // Support & Community
-  'help-and-support': process.env.DISCORD_WEBHOOK_SUPPORT || '',
-  'success-stories': process.env.DISCORD_WEBHOOK_SUCCESS || '',
-  'akih-scores': process.env.DISCORD_WEBHOOK_AKIH || '',
+  'help-and-support': (process.env.DISCORD_WEBHOOK_SUPPORT || '').trim(),
+  'success-stories': (process.env.DISCORD_WEBHOOK_SUCCESS || '').trim(),
+  'akih-scores': (process.env.DISCORD_WEBHOOK_AKIH || '').trim(),
 
   // Founding Members (exklusiv)
-  'founding-lounge': process.env.DISCORD_WEBHOOK_FOUNDING || '',
-  'early-previews': process.env.DISCORD_WEBHOOK_PREVIEWS || '',
+  'founding-lounge': (process.env.DISCORD_WEBHOOK_FOUNDING || '').trim(),
+  'early-previews': (process.env.DISCORD_WEBHOOK_PREVIEWS || '').trim(),
 
   // Fallback für allgemeine Nachrichten
-  'default': process.env.DISCORD_WEBHOOK_URL || ''
+  'default': (process.env.DISCORD_WEBHOOK_URL || '').trim()
 }
 
 // Channel Aliases für Voice Commands
