@@ -753,7 +753,7 @@ export interface HeyGenVideoResult {
 
 // Genesis Cloud API - Railway-hosted video generation service
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-const GENESIS_API_KEY = process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret'
+const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'evidenra-genesis-2024').trim()
 
 export async function createVideoViaGenesisCloud(topic: string = 'founding', fullMode: boolean = true): Promise<HeyGenVideoResult> {
   // fullMode = true: Screen Recording + Avatar + FFmpeg Composite
