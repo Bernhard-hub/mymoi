@@ -916,7 +916,7 @@ async function transcribeWithWhisper(audioUrl: string): Promise<string> {
   const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      'Authorization': `Bearer ${(process.env.GROQ_API_KEY || '').trim()}`
     },
     body: formData
   })

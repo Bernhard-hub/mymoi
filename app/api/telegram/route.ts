@@ -162,12 +162,13 @@ async function sendVoiceResponse(chatId: number, text: string) {
     await sendChatAction(chatId, 'record_voice')
 
     // Versuche OpenAI TTS (beste Qualität)
-    if (process.env.OPENAI_API_KEY) {
+    const openaiKey = (process.env.OPENAI_API_KEY || '').trim()
+    if (openaiKey) {
       try {
         const openaiRes = await fetch('https://api.openai.com/v1/audio/speech', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Authorization': `Bearer ${openaiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
@@ -236,7 +237,7 @@ async function transcribeAudio(fileId: string, fileType: 'voice' | 'video' = 'vo
 
   const whisperRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}` },
+    headers: { 'Authorization': `Bearer ${(process.env.GROQ_API_KEY || '').trim()}` },
     body: formData
   })
 
@@ -1013,13 +1014,13 @@ ${message.caption ? `📝 Caption: "${message.caption}"` : 'Schreib mir was ich 
       try {
         const twilio = (await import('twilio')).default
         const twilioClient = twilio(
-          process.env.TWILIO_ACCOUNT_SID!,
-          process.env.TWILIO_AUTH_TOKEN!
+          (process.env.TWILIO_ACCOUNT_SID || '').trim(),
+          (process.env.TWILIO_AUTH_TOKEN || '').trim()
         )
 
         await twilioClient.calls.create({
           to: phoneFormatted,
-          from: process.env.TWILIO_PHONE_NUMBER!,
+          from: (process.env.TWILIO_PHONE_NUMBER || '').trim(),
           url: 'https://mymoi-bot.vercel.app/api/voice'
         })
 
@@ -1618,13 +1619,13 @@ node composite-video.js "${status.video_url}" "D:\\Genesis Engine\\video-generat
         try {
           const twilio = (await import('twilio')).default
           const twilioClient = twilio(
-            process.env.TWILIO_ACCOUNT_SID!,
-            process.env.TWILIO_AUTH_TOKEN!
+            (process.env.TWILIO_ACCOUNT_SID || '').trim(),
+            (process.env.TWILIO_AUTH_TOKEN || '').trim()
           )
 
           await twilioClient.calls.create({
             to: ADMIN_PHONE,
-            from: process.env.TWILIO_PHONE_NUMBER!,
+            from: (process.env.TWILIO_PHONE_NUMBER || '').trim(),
             url: 'https://mymoi-bot.vercel.app/api/voice'
           })
 

@@ -83,7 +83,7 @@ async function executeTool(name: string, input: Record<string, unknown>, tokens:
   if (name === 'generate_image') {
     if (!process.env.TOGETHER_API_KEY) return { result: 'Bildgenerierung nicht verfuegbar.' }
     const resp = await fetch('https://api.together.xyz/v1/images/generations', {
-      method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.TOGETHER_API_KEY, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + (process.env.TOGETHER_API_KEY || '').trim(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: 'black-forest-labs/FLUX.1-schnell', prompt: input.prompt, width: 1024, height: 1024, n: 1 })
     })
     if (resp.ok) { const r = await resp.json(); if (r.data?.[0]?.url) return { result: 'Bild generiert!', data: { type: 'image', url: r.data[0].url } } }
@@ -207,11 +207,11 @@ export async function POST(request: NextRequest) {
       let transcript = '';
       if (process.env.GROQ_API_KEY) {
         const fd = new FormData(); fd.append('file', new Blob([audioBuffer], { type: 'audio/webm' }), 'audio.webm'); fd.append('model', 'whisper-large-v3'); fd.append('language', 'de');
-        const wr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.GROQ_API_KEY }, body: fd });
+        const wr = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (process.env.GROQ_API_KEY || '').trim() }, body: fd });
         if (wr.ok) { const r = await wr.json(); transcript = r.text || ''; console.log('[WHISPER]', transcript) }
       } else if (process.env.OPENAI_API_KEY) {
         const fd = new FormData(); fd.append('file', new Blob([audioBuffer], { type: 'audio/webm' }), 'audio.webm'); fd.append('model', 'whisper-1'); fd.append('language', 'de');
-        const wr = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY }, body: fd });
+        const wr = await fetch('https://api.openai.com/v1/audio/transcriptions', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (process.env.OPENAI_API_KEY || '').trim() }, body: fd });
         if (wr.ok) { const r = await wr.json(); transcript = r.text || '' }
       }
       if (!transcript) return NextResponse.json({ error: 'Transcription failed', response: 'Ich konnte dich nicht verstehen.' }, { status: 200 });
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
       let audioUrl = null;
       if (process.env.OPENAI_API_KEY && text) {
         try {
-          const tts = await fetch('https://api.openai.com/v1/audio/speech', { method: 'POST', headers: { 'Authorization': 'Bearer ' + process.env.OPENAI_API_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'tts-1', voice: 'nova', input: text.substring(0, 4000), response_format: 'mp3' }) });
+          const tts = await fetch('https://api.openai.com/v1/audio/speech', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (process.env.OPENAI_API_KEY || '').trim(), 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'tts-1', voice: 'nova', input: text.substring(0, 4000), response_format: 'mp3' }) });
           if (tts.ok) { const ab = await tts.arrayBuffer(); audioUrl = 'data:audio/mp3;base64,' + Buffer.from(ab).toString('base64') }
         } catch (e) { console.error('[TTS]', e) }
       }

@@ -17,21 +17,21 @@ import * as https from 'https'
 
 // Genesis Cloud API
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'genesis-evidenra-2024-secret').trim()
+const GENESIS_API_KEY = (process.env.GENESIS_API_KEY || 'evidenra-genesis-2024').trim()
 
 // Discord Webhook - Private #autopilot-intern channel (only visible to owner)
-const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK_URL || ''
+const DISCORD_WEBHOOK = (process.env.DISCORD_WEBHOOK_URL || '').trim()
 
 // Telegram Bot - EVIDENRA Marketing
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '7804985180'
+const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || '').trim()
+const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || '7804985180').trim()
 
-// Twitter Config - Updated with Read+Write permissions
+// Twitter Config - Updated with Read+Write permissions - ALL TRIMMED
 const TWITTER_CONFIG = {
-  apiKey: process.env.TWITTER_API_KEY || '',
-  apiSecretKey: process.env.TWITTER_API_SECRET || '',
-  accessToken: process.env.TWITTER_ACCESS_TOKEN || '',
-  accessTokenSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET || ''
+  apiKey: (process.env.TWITTER_API_KEY || '').trim(),
+  apiSecretKey: (process.env.TWITTER_API_SECRET || '').trim(),
+  accessToken: (process.env.TWITTER_ACCESS_TOKEN || '').trim(),
+  accessTokenSecret: (process.env.TWITTER_ACCESS_TOKEN_SECRET || '').trim()
 }
 
 // YouTube Config (from env) - trim to remove any whitespace
