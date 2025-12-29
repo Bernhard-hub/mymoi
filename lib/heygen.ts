@@ -7,7 +7,7 @@
  */
 
 // API Key wird aus Environment geladen - trim() entfernt unsichtbare Zeichen
-const HEYGEN_API_KEY = (process.env.HEYGEN_API_KEY || '').replace(/\\n/g, '').trim()
+const HEYGEN_API_KEY = (process.env.HEYGEN_API_KEY || '').replace(/\\n/g, '').replace(/[\r\n]/g, '').trim()
 
 const API_BASE = 'https://api.heygen.com/v2'
 const API_V1 = 'https://api.heygen.com/v1'
