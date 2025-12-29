@@ -1213,6 +1213,27 @@ Ich erstelle einen Kalender-Eintrag mit Google/Outlook Links!`)
       if (isWerbungCommand || isWerbungSchnell) {
         await sendChatAction(chatId, 'typing')
 
+        // SPAM-SCHUTZ: Prüfe ob bereits Videos in HeyGen Queue sind
+        const heygenKey = process.env.HEYGEN_API_KEY?.replace(/\\n/g, '').replace(/[\r\n]/g, '').trim()
+        if (heygenKey && !isWerbungSchnell) {
+          try {
+            const queueCheck = await fetch('https://api.heygen.com/v1/video.list', {
+              headers: { 'X-Api-Key': heygenKey }
+            })
+            const queueData = await queueCheck.json()
+            const pendingVideos = queueData.data?.videos?.filter((v: any) =>
+              v.status === 'waiting' || v.status === 'processing'
+            ) || []
+
+            if (pendingVideos.length >= 2) {
+              await sendMessage(chatId, `⏳ *Bitte warten!*\n\nEs sind bereits ${pendingVideos.length} Videos in der Queue.\nWarte bis diese fertig sind, oder nutze \`/werbung schnell\` für ein bestehendes Video.`)
+              return
+            }
+          } catch (e) {
+            console.log('[Werbung] Queue check failed, proceeding anyway')
+          }
+        }
+
         // Standard: IMMER neues Video, nur bei "schnell" bestehendes nutzen
         const createNew = !isWerbungSchnell
         const statusText = createNew
