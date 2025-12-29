@@ -753,8 +753,8 @@ export interface HeyGenVideoResult {
 
 // Genesis Cloud API - Railway-hosted video generation service
 const GENESIS_CLOUD_URL = 'https://web-production-ab08c.up.railway.app'
-// Fix: Remove literal \n strings AND whitespace from env vars
-const sanitizeEnv = (val: string) => val.replace(/\\n/g, '').trim()
+// Fix: Remove BOTH literal "\n" strings AND real newlines from env vars
+const sanitizeEnv = (val: string) => val.replace(/\\n/g, '').replace(/[\r\n]/g, '').trim()
 const GENESIS_API_KEY = sanitizeEnv(process.env.GENESIS_API_KEY || 'evidenra-genesis-2024')
 
 export async function createVideoViaGenesisCloud(topic: string = 'founding', fullMode: boolean = true): Promise<HeyGenVideoResult> {
